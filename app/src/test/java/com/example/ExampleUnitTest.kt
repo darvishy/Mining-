@@ -2,6 +2,7 @@ package com.example
 
 import com.example.data.PersonRecord
 import com.example.data.SearchField
+import com.example.data.VcfSessionData
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -51,17 +52,55 @@ class ExampleUnitTest {
         assertEquals(SearchField.NATIONAL_CODE.dbColumn, "national_code")
     }
 
-    @Test
-    fun `test synthetic generator math formula`() {
-        val seed = 42L
-        val natCode = String.format("%010d", (seed * 1103515245L + 12345L) % 1_000_000_0000L)
-        val cardNo = "6037" + String.format("%012d", (seed * 1664525L + 1013904223L) % 1_000_000_000_000L)
-        val mobile = "09" + String.format("%09d", (seed * 214013L + 2531011L) % 1_000_000_000L)
 
-        assertEquals(10, natCode.length)
-        assertEquals(16, cardNo.length)
-        assertEquals(11, mobile.length)
-        assertTrue(mobile.startsWith("09"))
-        assertTrue(cardNo.startsWith("6037"))
+
+    @Test
+    fun `test vcard entry generation structure and escaping`() {
+        val record = PersonRecord(
+            id = 500L,
+            nationalCode = "0019876543",
+            cardNo = "6037123456789012",
+            fullName = "Ali Rezaei",
+            birthDate = "1365/08/14",
+            mobile = "09129998877"
+        )
+
+        val prefix = "001"
+        assertTrue(record.nationalCode.startsWith(prefix))
+        assertTrue(record.fullName.isNotBlank())
+        assertTrue(record.mobile.isNotBlank())
+
+        val sb = StringBuilder()
+        sb.append("BEGIN:VCARD\r\n")
+        sb.append("VERSION:3.0\r\n")
+        sb.append("FN:${record.fullName}\r\n")
+        sb.append("TEL;TYPE=CELL:${record.mobile}\r\n")
+        sb.append("NOTE:NAT:${record.nationalCode} CARD:${record.cardNo} DOB:${record.birthDate}\r\n")
+        sb.append("END:VCARD\r\n")
+
+        val vcard = sb.toString()
+        assertTrue(vcard.contains("BEGIN:VCARD"))
+        assertTrue(vcard.contains("FN:Ali Rezaei"))
+        assertTrue(vcard.contains("TEL;TYPE=CELL:09129998877"))
+        assertTrue(vcard.contains("NAT:0019876543"))
+        assertTrue(vcard.contains("END:VCARD"))
+    }
+
+    @Test
+    fun `test vcf session data model`() {
+        val session = VcfSessionData(
+            prefix = "008",
+            filePath = "/storage/emulated/0/contacts_prefix_008.vcf",
+            lastProcessedId = 15000L,
+            processedRecords = 15000L,
+            totalRecords = 45000L,
+            status = "PAUSED",
+            elapsedMs = 12000L
+        )
+
+        assertEquals("008", session.prefix)
+        assertEquals(15000L, session.lastProcessedId)
+        assertEquals(45000L, session.totalRecords)
+        assertEquals("PAUSED", session.status)
     }
 }

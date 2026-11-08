@@ -3,6 +3,6 @@
     <item
         android:width="66dp"
         android:height="66dp"
-        android:drawable="@drawable/ic_nullhud_logo"
+        android:drawable="@drawable/ic_anonymous_mask"
         android:gravity="center" />
 </layer-list>

@@ -43,3 +43,28 @@ data class ImportProgress(
     val errorMessage: String? = null,
     val hasRecoverableSession: Boolean = false
 )
+
+data class VcfExportProgress(
+    val status: ImportStatus = ImportStatus.IDLE,
+    val prefix: String = "",
+    val filePath: String = "",
+    val processedRecords: Long = 0L,
+    val totalRecords: Long = 0L,
+    val recordsPerSecond: Long = 0L,
+    val elapsedSeconds: Long = 0L,
+    val etaSeconds: Long = 0L,
+    val fileSizeBytes: Long = 0L,
+    val errorMessage: String? = null,
+    val hasRecoverableSession: Boolean = false
+)
+
+data class VcfSessionData(
+    val prefix: String,
+    val filePath: String,
+    val lastProcessedId: Long,
+    val processedRecords: Long,
+    val totalRecords: Long,
+    val status: String,
+    val elapsedMs: Long
+)
+

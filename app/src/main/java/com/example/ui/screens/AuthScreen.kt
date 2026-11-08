@@ -105,12 +105,12 @@ fun AuthScreen(
             .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Developer Attribution & Telegram
-        DeveloperHeader()
-
-        Spacer(modifier = Modifier.height(20.dp))
-
         if (!isSetup.value) {
+            // DEVELOPER ATTRIBUTION & TELEGRAM ON SETUP WIZARD
+            DeveloperHeader()
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             // INITIAL SETUP SCREEN
             HudCard(
                 modifier = Modifier.fillMaxWidth(),

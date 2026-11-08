@@ -234,8 +234,8 @@ fun HudAvatar(
                     contentAlignment = Alignment.Center
                 ) {
                     Image(
-                        painter = painterResource(id = R.drawable.ic_nullhud_logo),
-                        contentDescription = "HUD Avatar",
+                        painter = painterResource(id = R.drawable.ic_anonymous_mask),
+                        contentDescription = "Anonymous HUD Avatar",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.size(112.dp)
                     )

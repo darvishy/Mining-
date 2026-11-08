@@ -1,5 +1,5 @@
 {
-  "name": "NullHUD",
+  "name": "Nullemperor",
   "description": "HUD-style database terminal featuring biometric security, animated cyber avatar, 10M+ record CSV batch importer with resume engine, and sub-millisecond indexed search.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

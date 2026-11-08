@@ -88,7 +88,6 @@ fun ImportScreen(
     val progress by importer.progress.collectAsState()
 
     var showClearConfirm by remember { mutableStateOf(false) }
-    var selectedBenchmarkSize by remember { mutableLongStateOf(1_000_000L) }
     var totalDbCount by remember { mutableLongStateOf(dbHelper.getTotalCount()) }
 
     // File picker launcher
@@ -156,11 +155,6 @@ fun ImportScreen(
                 )
             }
         }
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        // Developer Header
-        DeveloperHeader()
 
         Spacer(modifier = Modifier.height(14.dp))
 
@@ -414,100 +408,46 @@ fun ImportScreen(
         if (progress.status != ImportStatus.RUNNING) {
             HudCard(
                 modifier = Modifier.fillMaxWidth(),
-                title = "INGESTION SOURCE SELECTOR",
+                title = "CSV DATABASE INGESTION",
                 titleColor = HudCyan,
                 statusBadge = "READY",
                 statusColor = HudGreen
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Text(
-                        text = "1. IMPORT REAL CSV DATABASE FILE",
+                        text = "IMPORT REAL CSV DATABASE FILE",
                         color = HudTextPrimary,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Monospace
                     )
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Schema: NATIONAL_CODE, CARD_NO, FULL_NAME, BIRTH_DATE, MOBILE",
-                        color = HudTextDim,
+                        text = "Required Schema: NATIONAL_CODE, CARD_NO, FULL_NAME, BIRTH_DATE, MOBILE",
+                        color = HudAmber,
                         fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold,
                         fontFamily = FontFamily.Monospace
                     )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    HudButton(
-                        text = "BROWSE & IMPORT CSV FILE",
-                        onClick = {
-                            filePicker.launch(arrayOf("*/*", "text/*", "text/csv", "application/csv"))
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        accentColor = HudCyan,
-                        icon = Icons.Default.FolderOpen
-                    )
-
-                    Spacer(modifier = Modifier.height(18.dp))
-
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "2. HIGH-VOLUME HARDWARE BENCHMARK STREAM",
-                        color = HudTextPrimary,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
-                    )
-                    Text(
-                        text = "Generates and inserts realistic multi-million records with full B-Tree indexes at maximum hardware throughput (up to 50k+ rec/s).",
+                        text = "Hardware Optimized: Multi-million record capacity with SQLite WAL mode, 64 MB memory cache, and automatic crash checkpoint recovery.",
                         color = HudTextSecondary,
                         fontSize = 10.sp,
                         fontFamily = FontFamily.Monospace,
                         lineHeight = 14.sp
                     )
 
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // Size Selection Chips
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        BenchmarkSizeChip(
-                            label = "100K",
-                            records = 100_000L,
-                            selected = selectedBenchmarkSize == 100_000L,
-                            onSelect = { selectedBenchmarkSize = 100_000L },
-                            modifier = Modifier.weight(1f)
-                        )
-                        BenchmarkSizeChip(
-                            label = "1 MILLION",
-                            records = 1_000_000L,
-                            selected = selectedBenchmarkSize == 1_000_000L,
-                            onSelect = { selectedBenchmarkSize = 1_000_000L },
-                            modifier = Modifier.weight(1f)
-                        )
-                        BenchmarkSizeChip(
-                            label = "10 MILLION",
-                            records = 10_000_000L,
-                            selected = selectedBenchmarkSize == 10_000_000L,
-                            onSelect = { selectedBenchmarkSize = 10_000_000L },
-                            modifier = Modifier.weight(1.2f)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
                     HudButton(
-                        text = "START BENCHMARK INGESTION",
+                        text = "SELECT & IMPORT CSV FILE",
                         onClick = {
-                            scope.launch {
-                                importer.importSyntheticBenchmark(
-                                    totalTarget = selectedBenchmarkSize
-                                )
-                                refreshDbCount()
-                            }
+                            filePicker.launch(arrayOf("*/*", "text/*", "text/csv", "application/csv"))
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        accentColor = HudGreen,
-                        icon = Icons.Default.Speed
+                        accentColor = HudCyan,
+                        icon = Icons.Default.FolderOpen
                     )
                 }
             }
@@ -662,39 +602,7 @@ private fun MetricBox(
     }
 }
 
-@Composable
-private fun BenchmarkSizeChip(
-    label: String,
-    records: Long,
-    selected: Boolean,
-    onSelect: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        modifier = modifier
-            .height(38.dp)
-            .clickable { onSelect() },
-        color = if (selected) HudGreen.copy(alpha = 0.18f) else HudSurfaceElevated,
-        shape = RoundedCornerShape(2.dp),
-        border = androidx.compose.foundation.BorderStroke(
-            if (selected) 1.2.dp else 0.8.dp,
-            if (selected) HudGreen else HudBorder
-        )
-    ) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = label,
-                color = if (selected) HudGreen else HudTextSecondary,
-                fontSize = 11.sp,
-                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                fontFamily = FontFamily.Monospace
-            )
-        }
-    }
-}
+
 
 @Composable
 private fun ConfigSpecRow(name: String, value: String) {

@@ -23,6 +23,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         const val COL_MOBILE = "mobile"
 
         const val TABLE_SESSION = "import_session"
+        const val TABLE_VCF_SESSION = "vcf_export_session"
 
         @Volatile
         private var INSTANCE: DatabaseHelper? = null
@@ -44,6 +45,26 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         } catch (e: Exception) {
             Log.e(TAG, "Error configuring database PRAGMAs", e)
         }
+    }
+
+    override fun onOpen(db: SQLiteDatabase) {
+        super.onOpen(db)
+        // Ensure vcf_export_session table exists on opened database
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS $TABLE_VCF_SESSION (
+                session_id INTEGER PRIMARY KEY DEFAULT 1,
+                prefix TEXT,
+                file_path TEXT,
+                last_processed_id INTEGER,
+                processed_records INTEGER,
+                total_records INTEGER,
+                status TEXT,
+                elapsed_ms INTEGER,
+                updated_at INTEGER
+            );
+            """.trimIndent()
+        )
     }
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -83,11 +104,28 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             );
             """.trimIndent()
         )
+
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS $TABLE_VCF_SESSION (
+                session_id INTEGER PRIMARY KEY DEFAULT 1,
+                prefix TEXT,
+                file_path TEXT,
+                last_processed_id INTEGER,
+                processed_records INTEGER,
+                total_records INTEGER,
+                status TEXT,
+                elapsed_ms INTEGER,
+                updated_at INTEGER
+            );
+            """.trimIndent()
+        )
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         db.execSQL("DROP TABLE IF EXISTS $TABLE_RECORDS")
         db.execSQL("DROP TABLE IF EXISTS $TABLE_SESSION")
+        db.execSQL("DROP TABLE IF EXISTS $TABLE_VCF_SESSION")
         onCreate(db)
     }
 
@@ -281,6 +319,109 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
     fun clearSession() {
         writableDatabase.execSQL("DELETE FROM $TABLE_SESSION")
+    }
+
+    /**
+     * Counts all records matching the 3-digit national code prefix
+     * that contain both a non-empty name and a non-empty phone number.
+     */
+    fun countVcfEligibleRecords(prefix: String): Long {
+        val trimmed = prefix.trim()
+        if (trimmed.isEmpty()) return 0L
+        val db = readableDatabase
+        val sql = "SELECT COUNT(*) FROM $TABLE_RECORDS WHERE $COL_NAT_CODE LIKE ? || '%' AND $COL_FULL_NAME IS NOT NULL AND trim($COL_FULL_NAME) != '' AND $COL_MOBILE IS NOT NULL AND trim($COL_MOBILE) != ''"
+        db.rawQuery(sql, arrayOf(trimmed)).use { cursor ->
+            return if (cursor.moveToFirst()) cursor.getLong(0) else 0L
+        }
+    }
+
+    /**
+     * Streams a batch of eligible records ordered by ID for resume and memory efficiency.
+     */
+    fun queryVcfRecordsBatch(prefix: String, afterId: Long, limit: Int = 5000): List<PersonRecord> {
+        val trimmed = prefix.trim()
+        if (trimmed.isEmpty()) return emptyList()
+        val db = readableDatabase
+        val sql = """
+            SELECT $COL_ID, $COL_NAT_CODE, $COL_CARD_NO, $COL_FULL_NAME, $COL_BIRTH_DATE, $COL_MOBILE
+            FROM $TABLE_RECORDS
+            WHERE $COL_NAT_CODE LIKE ? || '%'
+              AND $COL_ID > ?
+              AND $COL_FULL_NAME IS NOT NULL AND trim($COL_FULL_NAME) != ''
+              AND $COL_MOBILE IS NOT NULL AND trim($COL_MOBILE) != ''
+            ORDER BY $COL_ID ASC
+            LIMIT ?
+        """.trimIndent()
+
+        val list = mutableListOf<PersonRecord>()
+        db.rawQuery(sql, arrayOf(trimmed, afterId.toString(), limit.toString())).use { cursor ->
+            val idIdx = cursor.getColumnIndexOrThrow(COL_ID)
+            val natIdx = cursor.getColumnIndexOrThrow(COL_NAT_CODE)
+            val cardIdx = cursor.getColumnIndexOrThrow(COL_CARD_NO)
+            val nameIdx = cursor.getColumnIndexOrThrow(COL_FULL_NAME)
+            val birthIdx = cursor.getColumnIndexOrThrow(COL_BIRTH_DATE)
+            val mobIdx = cursor.getColumnIndexOrThrow(COL_MOBILE)
+
+            while (cursor.moveToNext()) {
+                list.add(
+                    PersonRecord(
+                        id = cursor.getLong(idIdx),
+                        nationalCode = cursor.getString(natIdx) ?: "",
+                        cardNo = cursor.getString(cardIdx) ?: "",
+                        fullName = cursor.getString(nameIdx) ?: "",
+                        birthDate = cursor.getString(birthIdx) ?: "",
+                        mobile = cursor.getString(mobIdx) ?: ""
+                    )
+                )
+            }
+        }
+        return list
+    }
+
+    fun saveVcfSession(
+        prefix: String,
+        filePath: String,
+        lastProcessedId: Long,
+        processedRecords: Long,
+        totalRecords: Long,
+        status: String,
+        elapsedMs: Long
+    ) {
+        val db = writableDatabase
+        val values = ContentValues().apply {
+            put("session_id", 1)
+            put("prefix", prefix)
+            put("file_path", filePath)
+            put("last_processed_id", lastProcessedId)
+            put("processed_records", processedRecords)
+            put("total_records", totalRecords)
+            put("status", status)
+            put("elapsed_ms", elapsedMs)
+            put("updated_at", System.currentTimeMillis())
+        }
+        db.insertWithOnConflict(TABLE_VCF_SESSION, null, values, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    fun getActiveVcfSession(): VcfSessionData? {
+        val db = readableDatabase
+        db.rawQuery("SELECT prefix, file_path, last_processed_id, processed_records, total_records, status, elapsed_ms FROM $TABLE_VCF_SESSION WHERE session_id = 1", null).use { cursor ->
+            if (cursor.moveToFirst()) {
+                return VcfSessionData(
+                    prefix = cursor.getString(0) ?: "",
+                    filePath = cursor.getString(1) ?: "",
+                    lastProcessedId = cursor.getLong(2),
+                    processedRecords = cursor.getLong(3),
+                    totalRecords = cursor.getLong(4),
+                    status = cursor.getString(5) ?: "IDLE",
+                    elapsedMs = cursor.getLong(6)
+                )
+            }
+        }
+        return null
+    }
+
+    fun clearVcfSession() {
+        writableDatabase.execSQL("DELETE FROM $TABLE_VCF_SESSION")
     }
 
     data class SessionData(
