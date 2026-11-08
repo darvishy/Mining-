@@ -21,7 +21,6 @@ import com.example.data.CsvBatchImporter
 import com.example.data.DatabaseHelper
 import com.example.security.BiometricHelper
 import com.example.security.SecurityManager
-import com.example.ui.components.MiddleEastMeshBackground
 import com.example.ui.screens.AuthScreen
 import com.example.ui.screens.ImportScreen
 import com.example.ui.screens.MainHudScreen
@@ -89,11 +88,6 @@ class MainActivity : FragmentActivity() {
                             .padding(innerPadding)
                             .background(HudBackground)
                     ) {
-                        // Tactical Middle East Mesh Map background with animated light-up of every Iran province
-                        MiddleEastMeshBackground(
-                            modifier = Modifier.fillMaxSize()
-                        )
-
                         when (currentScreen) {
                             AppScreen.AUTH -> {
                                 AuthScreen(
