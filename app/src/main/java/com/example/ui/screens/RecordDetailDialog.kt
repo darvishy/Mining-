@@ -232,18 +232,11 @@ private fun RecordFieldRow(
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
+                horizontalArrangement = Arrangement.End,
                 modifier = Modifier.weight(1f)
             ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = accentColor,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
                 Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
+                    horizontalAlignment = Alignment.End,
                     modifier = Modifier.weight(1f)
                 ) {
                     Text(
@@ -252,7 +245,7 @@ private fun RecordFieldRow(
                         fontSize = 9.sp,
                         fontFamily = FontFamily.Monospace,
                         letterSpacing = 0.6.sp,
-                        textAlign = TextAlign.Center
+                        textAlign = TextAlign.End
                     )
                     Text(
                         text = value,
@@ -261,9 +254,16 @@ private fun RecordFieldRow(
                         fontWeight = FontWeight.SemiBold,
                         fontFamily = FontFamily.Monospace,
                         letterSpacing = 0.5.sp,
-                        textAlign = TextAlign.Center
+                        textAlign = TextAlign.End
                     )
                 }
+                Spacer(modifier = Modifier.width(8.dp))
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = accentColor,
+                    modifier = Modifier.size(16.dp)
+                )
             }
         }
     }
