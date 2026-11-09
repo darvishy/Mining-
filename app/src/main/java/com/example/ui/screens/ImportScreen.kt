@@ -100,7 +100,7 @@ fun ImportScreen(
                 importer.importCsvFile(
                     uri = uri,
                     fileName = fileName,
-                    totalEstimate = 10_000_000L
+                    totalEstimate = 0L // Triggers automatic pre-scan to calculate exact total records
                 )
                 totalDbCount = dbHelper.getTotalCount()
             }
@@ -294,8 +294,8 @@ fun ImportScreen(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     MetricBox(
-                        label = "ESTIMATED ETA",
-                        value = if (progress.etaSeconds > 0) formatSeconds(progress.etaSeconds) else "--:--",
+                        label = "TOTAL CSV DATA",
+                        value = if (progress.totalRecords > 0) String.format("%,d", progress.totalRecords) else if (progress.status == ImportStatus.RUNNING) "CALCULATING..." else "--",
                         accentColor = HudAmber,
                         modifier = Modifier.weight(1f)
                     )
@@ -310,10 +310,15 @@ fun ImportScreen(
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "PROGRESS: ${(progressFraction * 100).toInt()}%",
+                        text = if (progress.totalRecords > 0) {
+                            "PROGRESS: ${String.format("%,d", progress.processedRecords)} / ${String.format("%,d", progress.totalRecords)} (${(progressFraction * 100).toInt()}%)"
+                        } else {
+                            "PROCESSED: ${String.format("%,d", progress.processedRecords)} RECORDS"
+                        },
                         color = HudCyan,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,

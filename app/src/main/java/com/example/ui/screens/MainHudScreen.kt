@@ -44,10 +44,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -99,6 +103,7 @@ fun MainHudScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
 
     val importProgress by importer.progress.collectAsState()
@@ -109,7 +114,10 @@ fun MainHudScreen(
     var selectedField by remember { mutableStateOf(SearchField.ALL) }
     var searchResult by remember { mutableStateOf<SearchResult?>(null) }
     var isSearching by remember { mutableStateOf(false) }
+    var isSearchFocused by remember { mutableStateOf(false) }
     var selectedRecordForDetail by remember { mutableStateOf<PersonRecord?>(null) }
+
+    val isSearchAtTop = isSearchFocused || searchQuery.isNotEmpty() || searchResult != null || isSearching
 
     // Refresh database count
     val refreshCount = {
@@ -145,6 +153,15 @@ fun MainHudScreen(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Transparent)
+            .pointerInput(Unit) {
+                detectTapGestures(onTap = {
+                    focusManager.clearFocus()
+                    keyboardController?.hide()
+                    if (searchQuery.isEmpty() && searchResult == null) {
+                        isSearchFocused = false
+                    }
+                })
+            }
             .padding(horizontal = 14.dp)
     ) {
         // Top Space
@@ -305,23 +322,25 @@ fun MainHudScreen(
             Spacer(modifier = Modifier.height(14.dp))
         }
 
-        // Animated HUD Avatar (positioned above search interface)
-        item {
-            HudAvatar(
-                totalRecordsCount = totalDbCount,
-                statusText = when (importProgress.status) {
-                    ImportStatus.RUNNING -> "IMPORTING DATA"
-                    ImportStatus.PAUSED -> "IMPORT PAUSED"
-                    else -> "RADAR: ONLINE"
-                },
-                onAvatarClick = {
-                    refreshCount()
-                }
-            )
-            Spacer(modifier = Modifier.height(14.dp))
+        // If search is not active, display Animated HUD Avatar above search interface
+        if (!isSearchAtTop) {
+            item {
+                HudAvatar(
+                    totalRecordsCount = totalDbCount,
+                    statusText = when (importProgress.status) {
+                        ImportStatus.RUNNING -> "IMPORTING DATA"
+                        ImportStatus.PAUSED -> "IMPORT PAUSED"
+                        else -> "RADAR: ONLINE"
+                    },
+                    onAvatarClick = {
+                        refreshCount()
+                    }
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+            }
         }
 
-        // Search Interface Section
+        // Search Interface Section (Moves to top when search is clicked/active)
         item {
             HudCard(
                 modifier = Modifier.fillMaxWidth(),
@@ -367,7 +386,7 @@ fun MainHudScreen(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // Main Search Input Field
+                    // Main Search Input Field - Right Aligned
                     HudTextField(
                         value = searchQuery,
                         onValueChange = {
@@ -386,6 +405,14 @@ fun MainHudScreen(
                             SearchField.MOBILE -> "e.g. 09123456789"
                             SearchField.FULL_NAME -> "e.g. Rezaei, Hossein..."
                         },
+                        textAlign = TextAlign.End,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onFocusChanged { focusState ->
+                                if (focusState.isFocused) {
+                                    isSearchFocused = true
+                                }
+                            },
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Default.Search,
@@ -397,6 +424,7 @@ fun MainHudScreen(
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                         keyboardActions = KeyboardActions(onSearch = {
                             keyboardController?.hide()
+                            focusManager.clearFocus()
                             executeSearch()
                         })
                     )
@@ -413,7 +441,7 @@ fun MainHudScreen(
                             color = HudTextDim,
                             fontSize = 9.sp,
                             fontFamily = FontFamily.Monospace,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            textAlign = TextAlign.Center
                         )
 
                         Spacer(modifier = Modifier.height(10.dp))
@@ -422,6 +450,7 @@ fun MainHudScreen(
                             text = "FIND",
                             onClick = {
                                 keyboardController?.hide()
+                                focusManager.clearFocus()
                                 executeSearch()
                             },
                             accentColor = HudCyan,
@@ -575,6 +604,24 @@ fun MainHudScreen(
             }
         }
 
+        // When search is active and moved to top, render Animated Avatar at bottom of list
+        if (isSearchAtTop) {
+            item {
+                Spacer(modifier = Modifier.height(14.dp))
+                HudAvatar(
+                    totalRecordsCount = totalDbCount,
+                    statusText = when (importProgress.status) {
+                        ImportStatus.RUNNING -> "IMPORTING DATA"
+                        ImportStatus.PAUSED -> "IMPORT PAUSED"
+                        else -> "RADAR: ONLINE"
+                    },
+                    onAvatarClick = {
+                        refreshCount()
+                    }
+                )
+            }
+        }
+
         // Bottom padding
         item {
             Spacer(modifier = Modifier.height(24.dp))
@@ -603,118 +650,104 @@ private fun RecordItemCard(
         shape = RoundedCornerShape(2.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, HudBorder)
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .padding(12.dp)
                 .fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Action indicator on the left side
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Details",
-                tint = HudCyan,
-                modifier = Modifier.size(18.dp)
-            )
-
-            Spacer(modifier = Modifier.width(10.dp))
-
-            // Right-aligned record content
-            Column(
-                modifier = Modifier.weight(1f),
-                horizontalAlignment = Alignment.End
+            // Center-aligned Record Name & ID
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    HudBadge(
-                        text = "ID #${record.id}",
-                        color = HudTextDim,
-                        backgroundColor = HudBackground
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = record.fullName.ifEmpty { "UNNAMED RECORD" },
-                        color = HudTextPrimary,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace,
-                        textAlign = TextAlign.End
-                    )
-                }
+                Text(
+                    text = record.fullName.ifEmpty { "UNNAMED RECORD" },
+                    color = HudTextPrimary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                HudBadge(
+                    text = "ID #${record.id}",
+                    color = HudTextDim,
+                    backgroundColor = HudBackground
+                )
+            }
 
-                Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Mobile
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = record.mobile,
-                            color = HudCyan,
-                            fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace,
-                            textAlign = TextAlign.End
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Icon(
-                            imageVector = Icons.Default.Phone,
-                            contentDescription = null,
-                            tint = HudCyan,
-                            modifier = Modifier.size(13.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(12.dp))
-
-                    // National Code
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = record.nationalCode,
-                            color = HudAmber,
-                            fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.SemiBold,
-                            textAlign = TextAlign.End
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Icon(
-                            imageVector = Icons.Default.Fingerprint,
-                            contentDescription = null,
-                            tint = HudAmber,
-                            modifier = Modifier.size(13.dp)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(2.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = record.cardNo,
-                        color = HudTextSecondary,
-                        fontSize = 10.sp,
-                        fontFamily = FontFamily.Monospace,
-                        textAlign = TextAlign.End
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
+            // Center-aligned National Code & Mobile
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // National Code
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        imageVector = Icons.Default.CreditCard,
+                        imageVector = Icons.Default.Fingerprint,
                         contentDescription = null,
-                        tint = HudTextSecondary,
+                        tint = HudAmber,
                         modifier = Modifier.size(13.dp)
                     )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = record.nationalCode,
+                        color = HudAmber,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.Center
+                    )
                 }
+
+                Spacer(modifier = Modifier.width(16.dp))
+
+                // Mobile
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Phone,
+                        contentDescription = null,
+                        tint = HudCyan,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = record.mobile,
+                        color = HudCyan,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // Center-aligned Card Number
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CreditCard,
+                    contentDescription = null,
+                    tint = HudTextSecondary,
+                    modifier = Modifier.size(13.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = record.cardNo,
+                    color = HudTextSecondary,
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                    textAlign = TextAlign.Center
+                )
             }
         }
     }

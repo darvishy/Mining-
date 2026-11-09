@@ -84,6 +84,41 @@ class CsvBatchImporter(
     }
 
     /**
+     * Rapidly counts lines in a CSV file using high-throughput byte buffer.
+     * Counts all newlines in tens of milliseconds without line-by-line string allocations.
+     */
+    suspend fun countTotalRecords(uri: Uri): Long = withContext(Dispatchers.IO) {
+        try {
+            var count = 0L
+            var hasHeader = false
+            context.contentResolver.openInputStream(uri)?.use { stream ->
+                val buffer = ByteArray(128 * 1024)
+                var read: Int
+                var firstChunk = true
+                while (stream.read(buffer).also { read = it } != -1) {
+                    if (firstChunk && read > 0) {
+                        firstChunk = false
+                        val preview = String(buffer, 0, minOf(read, 1024), Charsets.UTF_8).uppercase()
+                        if (preview.contains("NATIONAL") || preview.contains("CARD") || preview.contains("MOBILE")) {
+                            hasHeader = true
+                        }
+                    }
+                    for (i in 0 until read) {
+                        if (buffer[i] == '\n'.code.toByte()) {
+                            count++
+                        }
+                    }
+                }
+            }
+            val total = if (hasHeader && count > 0) count - 1 else count
+            return@withContext if (total > 0) total else 0L
+        } catch (e: Exception) {
+            Log.e(TAG, "Error counting CSV lines", e)
+            return@withContext 0L
+        }
+    }
+
+    /**
      * Imports a real CSV file from Uri.
      */
     suspend fun importCsvFile(
@@ -107,11 +142,24 @@ class CsvBatchImporter(
         var processed = resumeFrom
         var lineIndex = 0L
 
+        var actualTotal = totalEstimate
+        if (actualTotal <= 0L) {
+            _progress.value = ImportProgress(
+                status = ImportStatus.RUNNING,
+                sourceName = fileName,
+                processedRecords = processed,
+                totalRecords = 0L,
+                elapsedSeconds = priorElapsedMs / 1000,
+                hasRecoverableSession = false
+            )
+            actualTotal = countTotalRecords(uri)
+        }
+
         _progress.value = ImportProgress(
             status = ImportStatus.RUNNING,
             sourceName = fileName,
             processedRecords = processed,
-            totalRecords = totalEstimate,
+            totalRecords = actualTotal,
             elapsedSeconds = priorElapsedMs / 1000,
             hasRecoverableSession = false
         )
@@ -122,7 +170,7 @@ class CsvBatchImporter(
             sourceType = "FILE",
             processedRecords = processed,
             byteOffset = 0,
-            totalRecords = totalEstimate,
+            totalRecords = actualTotal,
             status = ImportStatus.RUNNING.name,
             elapsedMs = priorElapsedMs
         )
@@ -173,13 +221,14 @@ class CsvBatchImporter(
                                 sourceType = "FILE",
                                 processedRecords = processed,
                                 byteOffset = 0,
-                                totalRecords = totalEstimate,
+                                totalRecords = actualTotal,
                                 status = ImportStatus.PAUSED.name,
                                 elapsedMs = currentElapsed
                             )
                             _progress.value = _progress.value.copy(
                                 status = ImportStatus.PAUSED,
                                 processedRecords = processed,
+                                totalRecords = actualTotal,
                                 elapsedSeconds = currentElapsed / 1000,
                                 hasRecoverableSession = true
                             )
@@ -215,14 +264,14 @@ class CsvBatchImporter(
                                 val currentSpeed = (recordsDelta * 1000L) / timeDelta
                                 val currentElapsed = (now - startTimestamp) / 1000
 
-                                val remaining = (totalEstimate - processed).coerceAtLeast(0)
+                                val remaining = (actualTotal - processed).coerceAtLeast(0)
                                 val eta = if (currentSpeed > 0 && remaining > 0) remaining / currentSpeed else 0
 
                                 _progress.value = ImportProgress(
                                     status = ImportStatus.RUNNING,
                                     sourceName = fileName,
                                     processedRecords = processed,
-                                    totalRecords = totalEstimate,
+                                    totalRecords = actualTotal,
                                     recordsPerSecond = currentSpeed,
                                     elapsedSeconds = currentElapsed,
                                     etaSeconds = eta
@@ -234,7 +283,7 @@ class CsvBatchImporter(
                                     sourceType = "FILE",
                                     processedRecords = processed,
                                     byteOffset = 0,
-                                    totalRecords = totalEstimate,
+                                    totalRecords = actualTotal,
                                     status = ImportStatus.RUNNING.name,
                                     elapsedMs = now - startTimestamp
                                 )

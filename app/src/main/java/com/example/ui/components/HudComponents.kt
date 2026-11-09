@@ -60,6 +60,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -268,7 +269,8 @@ fun HudTextField(
     visualTransformation: VisualTransformation = VisualTransformation.None,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
-    singleLine: Boolean = true
+    singleLine: Boolean = true,
+    textAlign: TextAlign = TextAlign.Start
 ) {
     Column(modifier = modifier) {
         OutlinedTextField(
@@ -280,7 +282,9 @@ fun HudTextField(
                     text = label.uppercase(),
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
-                    letterSpacing = 0.8.sp
+                    letterSpacing = 0.8.sp,
+                    textAlign = textAlign,
+                    modifier = if (textAlign == TextAlign.End) Modifier.fillMaxWidth() else Modifier
                 )
             },
             placeholder = {
@@ -288,7 +292,9 @@ fun HudTextField(
                     text = placeholder,
                     color = HudTextDim,
                     fontFamily = FontFamily.Monospace,
-                    fontSize = 13.sp
+                    fontSize = 13.sp,
+                    textAlign = textAlign,
+                    modifier = if (textAlign == TextAlign.End) Modifier.fillMaxWidth() else Modifier
                 )
             },
             leadingIcon = leadingIcon,
@@ -312,7 +318,8 @@ fun HudTextField(
             textStyle = MaterialTheme.typography.bodyLarge.copy(
                 fontFamily = FontFamily.Monospace,
                 color = HudTextPrimary,
-                fontSize = 14.sp
+                fontSize = 14.sp,
+                textAlign = textAlign
             ),
             shape = RoundedCornerShape(2.dp),
             colors = OutlinedTextFieldDefaults.colors(
