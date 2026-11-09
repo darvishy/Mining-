@@ -21,6 +21,7 @@ import com.example.data.CsvBatchImporter
 import com.example.data.DatabaseHelper
 import com.example.security.BiometricHelper
 import com.example.security.SecurityManager
+import com.example.ui.components.MiddleEastMeshBackground
 import com.example.ui.screens.AuthScreen
 import com.example.ui.screens.ImportScreen
 import com.example.ui.screens.MainHudScreen
@@ -28,13 +29,16 @@ import com.example.ui.theme.HudBackground
 import com.example.ui.theme.NullHudTheme
 
 import com.example.data.VcfExporter
+import com.example.ui.components.MiddleEastMeshBackground
+import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.VcfExportScreen
 
 enum class AppScreen {
     AUTH,
     MAIN,
     IMPORT,
-    VCF_EXPORT
+    VCF_EXPORT,
+    SETTINGS
 }
 
 class MainActivity : FragmentActivity() {
@@ -46,7 +50,10 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        enableEdgeToEdge(
+            statusBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+        )
 
         securityManager = SecurityManager.getInstance(this)
         dbHelper = DatabaseHelper.getInstance(this)
@@ -88,6 +95,11 @@ class MainActivity : FragmentActivity() {
                             .padding(innerPadding)
                             .background(HudBackground)
                     ) {
+                        // Tactical Middle East Mesh Map background with animated light-up of every Iran province
+                        MiddleEastMeshBackground(
+                            modifier = Modifier.fillMaxSize()
+                        )
+
                         when (currentScreen) {
                             AppScreen.AUTH -> {
                                 AuthScreen(
@@ -116,6 +128,9 @@ class MainActivity : FragmentActivity() {
                                     onNavigateToVcf = {
                                         currentScreen = AppScreen.VCF_EXPORT
                                     },
+                                    onNavigateToSettings = {
+                                        currentScreen = AppScreen.SETTINGS
+                                    },
                                     onLockTerminal = {
                                         currentScreen = AppScreen.AUTH
                                     }
@@ -142,6 +157,18 @@ class MainActivity : FragmentActivity() {
                                 VcfExportScreen(
                                     vcfExporter = vcfExporter,
                                     dbHelper = dbHelper,
+                                    onBack = {
+                                        currentScreen = AppScreen.MAIN
+                                    }
+                                )
+                            }
+                            AppScreen.SETTINGS -> {
+                                BackHandler {
+                                    currentScreen = AppScreen.MAIN
+                                }
+
+                                SettingsScreen(
+                                    securityManager = securityManager,
                                     onBack = {
                                         currentScreen = AppScreen.MAIN
                                     }

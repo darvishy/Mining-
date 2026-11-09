@@ -119,26 +119,43 @@ fun ImportScreen(
             .padding(16.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        // Navigation Header
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+        // Navigation Header: Uniform Action Button
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable {
+                    triggerHudHaptic(context, 15)
+                    onBack()
+                },
+            color = HudSurfaceElevated,
+            shape = RoundedCornerShape(2.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, HudBorderBright)
         ) {
-            IconButton(
-                onClick = onBack,
-                modifier = Modifier
-                    .size(40.dp)
-                    .background(HudSurfaceElevated, RoundedCornerShape(2.dp))
-                    .border(1.dp, HudBorderBright, RoundedCornerShape(2.dp))
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "Back",
-                    tint = HudCyan
+                    tint = HudCyan,
+                    modifier = Modifier.size(15.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "RETURN TO HUD",
+                    color = HudTextPrimary,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
                 )
             }
-            Spacer(modifier = Modifier.width(12.dp))
-            Column {
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
                     text = "DATA INGESTION TERMINAL",
                     color = HudCyan,
@@ -154,7 +171,6 @@ fun ImportScreen(
                     fontFamily = FontFamily.Monospace
                 )
             }
-        }
 
         Spacer(modifier = Modifier.height(14.dp))
 

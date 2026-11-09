@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CreditCard
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -44,11 +46,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.CsvBatchImporter
@@ -89,6 +93,7 @@ fun MainHudScreen(
     vcfExporter: VcfExporter,
     onNavigateToImport: () -> Unit,
     onNavigateToVcf: () -> Unit,
+    onNavigateToSettings: () -> Unit,
     onLockTerminal: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -139,7 +144,7 @@ fun MainHudScreen(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(HudBackground)
+            .background(Color.Transparent)
             .padding(horizontal = 14.dp)
     ) {
         // Top Space
@@ -147,14 +152,14 @@ fun MainHudScreen(
             Spacer(modifier = Modifier.height(10.dp))
         }
 
-        // Tactical Action Bar: Ingestion & Lock buttons
+        // Tactical Action Bar: 4 Uniform Equal-Width Buttons
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Ingest Data Action Button with live status indicator
+                // 1. Ingest Data Button
                 Surface(
                     modifier = Modifier
                         .weight(1f)
@@ -170,7 +175,7 @@ fun MainHudScreen(
                     )
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ) {
@@ -178,20 +183,20 @@ fun MainHudScreen(
                             imageVector = Icons.Default.CloudDownload,
                             contentDescription = "Data Import",
                             tint = if (importProgress.status == ImportStatus.RUNNING) HudCyan else HudTextSecondary,
-                            modifier = Modifier.size(15.dp)
+                            modifier = Modifier.size(13.dp)
                         )
-                        Spacer(modifier = Modifier.width(5.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
                         Text(
-                            text = if (importProgress.status == ImportStatus.RUNNING) "INGESTING" else "INGESTION",
+                            text = if (importProgress.status == ImportStatus.RUNNING) "INGEST" else "INGEST",
                             color = if (importProgress.status == ImportStatus.RUNNING) HudCyan else HudTextPrimary,
-                            fontSize = 10.sp,
+                            fontSize = 9.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace
                         )
                     }
                 }
 
-                // VCF Contacts Action Button
+                // 2. VCF Contacts Button
                 Surface(
                     modifier = Modifier
                         .weight(1f)
@@ -203,45 +208,97 @@ fun MainHudScreen(
                     shape = RoundedCornerShape(2.dp),
                     border = androidx.compose.foundation.BorderStroke(
                         1.dp,
-                        if (vcfProgress.status == ImportStatus.RUNNING) HudAmber else if (vcfProgress.hasRecoverableSession) HudAmber else HudBorderBright
+                        if (vcfProgress.status == ImportStatus.RUNNING || vcfProgress.hasRecoverableSession) HudAmber else HudBorderBright
                     )
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.ContactPage,
-                            contentDescription = "VCF Contacts",
+                            contentDescription = "VCF",
                             tint = if (vcfProgress.status == ImportStatus.RUNNING) HudAmber else HudCyan,
-                            modifier = Modifier.size(15.dp)
+                            modifier = Modifier.size(13.dp)
                         )
-                        Spacer(modifier = Modifier.width(5.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
                         Text(
-                            text = if (vcfProgress.status == ImportStatus.RUNNING) "VCF EXPORT" else if (vcfProgress.hasRecoverableSession) "VCF [RESUME]" else "VCF EXPORT",
+                            text = "VCF",
                             color = if (vcfProgress.status == ImportStatus.RUNNING) HudAmber else HudTextPrimary,
-                            fontSize = 10.sp,
+                            fontSize = 9.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace
                         )
                     }
                 }
 
-                // Lock Terminal Button
-                IconButton(
-                    onClick = onLockTerminal,
+                // 3. Settings Button (Fits width uniformly)
+                Surface(
                     modifier = Modifier
-                        .size(36.dp)
-                        .background(HudSurfaceElevated, RoundedCornerShape(2.dp))
-                        .border(1.dp, HudBorderBright, RoundedCornerShape(2.dp))
+                        .weight(1f)
+                        .clickable {
+                            triggerHudHaptic(context, 20)
+                            onNavigateToSettings()
+                        },
+                    color = HudSurfaceElevated,
+                    shape = RoundedCornerShape(2.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, HudBorderBright)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Lock,
-                        contentDescription = "Lock",
-                        tint = HudAmber,
-                        modifier = Modifier.size(16.dp)
-                    )
+                    Row(
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Settings",
+                            tint = HudCyan,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text(
+                            text = "SETTINGS",
+                            color = HudTextPrimary,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                }
+
+                // 4. Lock Terminal Button (Fits width uniformly)
+                Surface(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable {
+                            triggerHudHaptic(context, 20)
+                            onLockTerminal()
+                        },
+                    color = HudSurfaceElevated,
+                    shape = RoundedCornerShape(2.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, HudBorderBright)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = "Lock",
+                            tint = HudAmber,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text(
+                            text = "LOCK",
+                            color = HudAmber,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
                 }
             }
 
@@ -346,26 +403,30 @@ fun MainHudScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Quick Search Action Buttons
-                    Row(
+                    // Quick Search Action Buttons - Center Aligned
+                    Column(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
                             text = "INDEX KEYS: NAT_CODE, CARD_NO, MOBILE, NAME",
                             color = HudTextDim,
                             fontSize = 9.sp,
-                            fontFamily = FontFamily.Monospace
+                            fontFamily = FontFamily.Monospace,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
                         )
 
+                        Spacer(modifier = Modifier.height(10.dp))
+
                         HudButton(
-                            text = "EXECUTE SEARCH",
+                            text = "FIND",
                             onClick = {
                                 keyboardController?.hide()
                                 executeSearch()
                             },
-                            accentColor = HudCyan
+                            accentColor = HudCyan,
+                            icon = Icons.Default.Search,
+                            modifier = Modifier.fillMaxWidth(0.6f)
                         )
                     }
                 }
@@ -549,20 +610,39 @@ private fun RecordItemCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+            // Action indicator on the left side
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Details",
+                tint = HudCyan,
+                modifier = Modifier.size(18.dp)
+            )
+
+            Spacer(modifier = Modifier.width(10.dp))
+
+            // Right-aligned record content
+            Column(
+                modifier = Modifier.weight(1f),
+                horizontalAlignment = Alignment.End
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    HudBadge(
+                        text = "ID #${record.id}",
+                        color = HudTextDim,
+                        backgroundColor = HudBackground
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = record.fullName.ifEmpty { "UNNAMED RECORD" },
                         color = HudTextPrimary,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    HudBadge(
-                        text = "ID #${record.id}",
-                        color = HudTextDim,
-                        backgroundColor = HudBackground
+                        fontFamily = FontFamily.Monospace,
+                        textAlign = TextAlign.End
                     )
                 }
 
@@ -570,67 +650,72 @@ private fun RecordItemCard(
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // Mobile
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Fingerprint,
-                            contentDescription = null,
-                            tint = HudAmber,
-                            modifier = Modifier.size(13.dp)
-                        )
-                        Spacer(modifier = Modifier.width(3.dp))
                         Text(
-                            text = record.nationalCode,
-                            color = HudAmber,
+                            text = record.mobile,
+                            color = HudCyan,
                             fontSize = 11.sp,
                             fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.SemiBold
+                            textAlign = TextAlign.End
                         )
-                    }
-
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Spacer(modifier = Modifier.width(4.dp))
                         Icon(
                             imageVector = Icons.Default.Phone,
                             contentDescription = null,
                             tint = HudCyan,
                             modifier = Modifier.size(13.dp)
                         )
-                        Spacer(modifier = Modifier.width(3.dp))
+                    }
+
+                    Spacer(modifier = Modifier.width(12.dp))
+
+                    // National Code
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = record.mobile,
-                            color = HudCyan,
+                            text = record.nationalCode,
+                            color = HudAmber,
                             fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.End
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            imageVector = Icons.Default.Fingerprint,
+                            contentDescription = null,
+                            tint = HudAmber,
+                            modifier = Modifier.size(13.dp)
                         )
                     }
                 }
 
                 Spacer(modifier = Modifier.height(2.dp))
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = record.cardNo,
+                        color = HudTextSecondary,
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        textAlign = TextAlign.End
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
                     Icon(
                         imageVector = Icons.Default.CreditCard,
                         contentDescription = null,
                         tint = HudTextSecondary,
                         modifier = Modifier.size(13.dp)
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = record.cardNo,
-                        color = HudTextSecondary,
-                        fontSize = 10.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
                 }
             }
-
-            Icon(
-                imageVector = Icons.Default.ChevronRight,
-                contentDescription = "Details",
-                tint = HudCyan,
-                modifier = Modifier.size(20.dp)
-            )
         }
     }
 }

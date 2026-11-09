@@ -1,9 +1,13 @@
 package com.example.ui.theme
 
+import android.app.Activity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 
 private val HudColorScheme = darkColorScheme(
     primary = HudCyan,
@@ -38,6 +42,20 @@ private val HudColorScheme = darkColorScheme(
 
 @Composable
 fun NullHudTheme(content: @Composable () -> Unit) {
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = (view.context as? Activity)?.window
+            if (window != null) {
+                val insetsController = WindowCompat.getInsetsController(window, view)
+                // Force white status bar & nav bar icons so they remain 100% visible on dark HUD
+                // regardless of whether the user device has light theme ("white theme") or dark theme.
+                insetsController.isAppearanceLightStatusBars = false
+                insetsController.isAppearanceLightNavigationBars = false
+            }
+        }
+    }
+
     MaterialTheme(
         colorScheme = HudColorScheme,
         typography = Typography,

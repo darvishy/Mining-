@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.sp
 import com.example.security.BiometricHelper
 import com.example.security.SecurityManager
 import com.example.ui.components.DeveloperHeader
+import com.example.ui.components.HudAvatar
 import com.example.ui.components.HudButton
 import com.example.ui.components.HudCard
 import com.example.ui.components.HudTextField
@@ -84,18 +85,10 @@ fun AuthScreen(
     var confirmPassword by remember { mutableStateOf("") }
     var enableBiometricSetup by remember { mutableStateOf(isBiometricAvailable) }
     var setupError by remember { mutableStateOf<String?>(null) }
-
     // Unlock state
     var unlockPassword by remember { mutableStateOf("") }
     var isPasswordVisible by remember { mutableStateOf(false) }
     var unlockError by remember { mutableStateOf<String?>(null) }
-
-    // Auto-request biometric on unlock if enabled
-    LaunchedEffect(isSetup.value) {
-        if (isSetup.value && securityManager.isBiometricEnabled() && isBiometricAvailable) {
-            onRequestBiometricPrompt()
-        }
-    }
 
     Column(
         modifier = modifier
@@ -273,6 +266,14 @@ fun AuthScreen(
                 }
             }
         } else {
+            // Animated HUD Avatar on Lockscreen
+            HudAvatar(
+                totalRecordsCount = 0L,
+                statusText = "SYS LOCKED // CLEARANCE REQUIRED"
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
             // UNLOCK SCREEN
             HudCard(
                 modifier = Modifier.fillMaxWidth(),

@@ -62,6 +62,20 @@ class SecurityManager(context: Context) {
         return storedHash == inputHash
     }
 
+    fun updatePassword(currentPass: String, newPass: String): Boolean {
+        if (!verifyPassword(currentPass)) return false
+        if (newPass.length < 4) return false
+
+        val salt = generateSalt()
+        val hash = hashPassword(newPass, salt)
+
+        prefs.edit()
+            .putString(KEY_PASSWORD_HASH, hash)
+            .putString(KEY_PASSWORD_SALT, salt)
+            .apply()
+        return true
+    }
+
     fun resetSecurity() {
         prefs.edit().clear().apply()
     }

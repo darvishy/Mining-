@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.PersonRecord
@@ -220,24 +221,31 @@ private fun RecordFieldRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
+            Icon(
+                imageVector = Icons.Default.ContentCopy,
+                contentDescription = "Copy",
+                tint = HudTextSecondary,
+                modifier = Modifier.size(16.dp)
+            )
+
+            Spacer(modifier = Modifier.width(8.dp))
+
             Row(
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.End,
                 modifier = Modifier.weight(1f)
             ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = accentColor,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Column {
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    modifier = Modifier.weight(1f)
+                ) {
                     Text(
                         text = label,
                         color = HudTextDim,
                         fontSize = 9.sp,
                         fontFamily = FontFamily.Monospace,
-                        letterSpacing = 0.6.sp
+                        letterSpacing = 0.6.sp,
+                        textAlign = TextAlign.End
                     )
                     Text(
                         text = value,
@@ -245,17 +253,18 @@ private fun RecordFieldRow(
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
                         fontFamily = FontFamily.Monospace,
-                        letterSpacing = 0.5.sp
+                        letterSpacing = 0.5.sp,
+                        textAlign = TextAlign.End
                     )
                 }
+                Spacer(modifier = Modifier.width(8.dp))
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = accentColor,
+                    modifier = Modifier.size(16.dp)
+                )
             }
-
-            Icon(
-                imageVector = Icons.Default.ContentCopy,
-                contentDescription = "Copy",
-                tint = HudTextSecondary,
-                modifier = Modifier.size(16.dp)
-            )
         }
     }
 }
