@@ -6,8 +6,26 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import android.database.sqlite.SQLiteStatement
 import android.util.Log
+import java.io.File
 
-class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
+class DatabaseHelper(private val context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
+
+    fun getDatabaseFile(): File {
+        return context.getDatabasePath(DATABASE_NAME)
+    }
+
+    fun checkpointWal() {
+        try {
+            val db = writableDatabase
+            db.rawQuery("PRAGMA wal_checkpoint(TRUNCATE);", null).use { cursor ->
+                if (cursor.moveToFirst()) {
+                    Log.d(TAG, "WAL checkpoint completed: busy=${cursor.getInt(0)}")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error executing WAL checkpoint", e)
+        }
+    }
 
     companion object {
         private const val TAG = "DatabaseHelper"

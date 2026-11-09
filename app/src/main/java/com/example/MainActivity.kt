@@ -28,6 +28,7 @@ import com.example.ui.screens.MainHudScreen
 import com.example.ui.theme.HudBackground
 import com.example.ui.theme.NullHudTheme
 
+import com.example.data.FastBackupManager
 import com.example.data.VcfExporter
 import com.example.ui.components.MiddleEastMeshBackground
 import com.example.ui.screens.SettingsScreen
@@ -47,6 +48,7 @@ class MainActivity : FragmentActivity() {
     private lateinit var dbHelper: DatabaseHelper
     private lateinit var importer: CsvBatchImporter
     private lateinit var vcfExporter: VcfExporter
+    private lateinit var backupManager: FastBackupManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -59,6 +61,7 @@ class MainActivity : FragmentActivity() {
         dbHelper = DatabaseHelper.getInstance(this)
         importer = CsvBatchImporter(this, dbHelper)
         vcfExporter = VcfExporter(this, dbHelper)
+        backupManager = FastBackupManager(this, dbHelper)
 
         setContent {
             NullHudTheme {
@@ -169,6 +172,8 @@ class MainActivity : FragmentActivity() {
 
                                 SettingsScreen(
                                     securityManager = securityManager,
+                                    backupManager = backupManager,
+                                    dbHelper = dbHelper,
                                     onBack = {
                                         currentScreen = AppScreen.MAIN
                                     }
