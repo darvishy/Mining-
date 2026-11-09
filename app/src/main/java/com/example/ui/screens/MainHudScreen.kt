@@ -1,5 +1,10 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -119,7 +124,7 @@ fun MainHudScreen(
     var isSearchFocused by remember { mutableStateOf(false) }
     var selectedRecordForDetail by remember { mutableStateOf<PersonRecord?>(null) }
 
-    val isSearchAtTop = isSearchFocused || searchQuery.isNotEmpty() || searchResult != null || isSearching
+    val isSearchAtTop = isSearchFocused || searchResult != null || isSearching
 
     // Refresh database count
     val refreshCount = {
@@ -155,15 +160,6 @@ fun MainHudScreen(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Transparent)
-            .pointerInput(Unit) {
-                detectTapGestures(onTap = {
-                    focusManager.clearFocus()
-                    keyboardController?.hide()
-                    if (searchQuery.isEmpty() && searchResult == null) {
-                        isSearchFocused = false
-                    }
-                })
-            }
             .padding(horizontal = 14.dp)
     ) {
         // Top Space
@@ -324,26 +320,32 @@ fun MainHudScreen(
             Spacer(modifier = Modifier.height(14.dp))
         }
 
-        // If search is not active, display Animated HUD Avatar above search interface
-        if (!isSearchAtTop) {
-            item {
-                HudAvatar(
-                    totalRecordsCount = totalDbCount,
-                    statusText = when (importProgress.status) {
-                        ImportStatus.RUNNING -> "IMPORTING DATA"
-                        ImportStatus.PAUSED -> "IMPORT PAUSED"
-                        else -> "RADAR: ONLINE"
-                    },
-                    onAvatarClick = {
-                        refreshCount()
-                    }
-                )
-                Spacer(modifier = Modifier.height(14.dp))
+        // If search is not active, display Animated HUD Avatar above search interface with stable key
+        item(key = "avatar_banner") {
+            AnimatedVisibility(
+                visible = !isSearchAtTop,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                Column {
+                    HudAvatar(
+                        totalRecordsCount = totalDbCount,
+                        statusText = when (importProgress.status) {
+                            ImportStatus.RUNNING -> "IMPORTING DATA"
+                            ImportStatus.PAUSED -> "IMPORT PAUSED"
+                            else -> "RADAR: ONLINE"
+                        },
+                        onAvatarClick = {
+                            refreshCount()
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                }
             }
         }
 
-        // Search Interface Section (Moves to top when search is clicked/active)
-        item {
+        // Search Interface Section (Stable key preserves OutlinedTextField composition and focus)
+        item(key = "search_terminal") {
             HudCard(
                 modifier = Modifier.fillMaxWidth(),
                 borderColor = HudCyan,
@@ -366,7 +368,9 @@ fun MainHudScreen(
                                         triggerHudHaptic(context, 15)
                                         selectedField = field
                                         isSearchFocused = true
-                                        executeSearch()
+                                        if (searchResult != null && searchQuery.trim().isNotEmpty()) {
+                                            executeSearch()
+                                        }
                                     },
                                 color = if (isSelected) HudCyan.copy(alpha = 0.2f) else HudSurfaceElevated,
                                 shape = RoundedCornerShape(2.dp),
@@ -394,9 +398,7 @@ fun MainHudScreen(
                         value = searchQuery,
                         onValueChange = {
                             searchQuery = it
-                            if (it.length >= 2) {
-                                executeSearch()
-                            } else if (it.isEmpty()) {
+                            if (it.isEmpty()) {
                                 searchResult = null
                             }
                         },
@@ -452,6 +454,22 @@ fun MainHudScreen(
                             executeSearch()
                         })
                     )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Dedicated Search Button: Search only initiates when this button or keyboard search is pressed
+                    HudButton(
+                        text = if (isSearching) "SEARCHING B-TREE..." else "FIND",
+                        onClick = {
+                            keyboardController?.hide()
+                            focusManager.clearFocus()
+                            executeSearch()
+                        },
+                        enabled = searchQuery.trim().isNotEmpty() && !isSearching,
+                        accentColor = HudCyan,
+                        icon = Icons.Default.Search,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
 
@@ -460,7 +478,7 @@ fun MainHudScreen(
 
         // Live Search Benchmark Telemetry Bar (When search was executed)
         if (searchResult != null) {
-            item {
+            item(key = "benchmark_telemetry") {
                 HudCard(
                     modifier = Modifier.fillMaxWidth(),
                     borderColor = HudGreen,
@@ -523,7 +541,7 @@ fun MainHudScreen(
                 Spacer(modifier = Modifier.height(8.dp))
             }
         } else if (searchResult != null && searchResult?.records?.isEmpty() == true) {
-            item {
+            item(key = "no_records_match") {
                 HudCard(
                     modifier = Modifier.fillMaxWidth(),
                     borderColor = HudAmber,
@@ -556,7 +574,7 @@ fun MainHudScreen(
             }
         } else if (totalDbCount == 0L) {
             // Initial empty database guidance card
-            item {
+            item(key = "unpopulated_db") {
                 HudCard(
                     modifier = Modifier.fillMaxWidth(),
                     borderColor = HudAmber,

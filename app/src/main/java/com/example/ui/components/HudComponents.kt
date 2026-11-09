@@ -272,11 +272,11 @@ fun HudTextField(
     singleLine: Boolean = true,
     textAlign: TextAlign = TextAlign.Start
 ) {
-    Column(modifier = modifier) {
+    Column(modifier = Modifier.fillMaxWidth()) {
         OutlinedTextField(
             value = value,
             onValueChange = onValueChange,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = modifier.fillMaxWidth(),
             label = {
                 Text(
                     text = label.uppercase(),

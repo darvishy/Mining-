@@ -42,6 +42,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,6 +62,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.DatabaseHelper
 import com.example.data.ImportStatus
 import com.example.data.VcfExporter
+import com.example.data.VcfFileInfo
 import com.example.ui.components.DeveloperHeader
 import com.example.ui.components.HudBadge
 import com.example.ui.components.HudButton
@@ -98,6 +100,7 @@ fun VcfExportScreen(
     val progress by vcfExporter.progress.collectAsState()
 
     var prefixInput by remember { mutableStateOf("") }
+    var recordsPerFile by remember { mutableIntStateOf(2000) }
     var matchingCount by remember { mutableLongStateOf(0L) }
     var isCheckingCount by remember { mutableStateOf(false) }
 
@@ -438,8 +441,9 @@ fun VcfExportScreen(
                             }
                         }
                         ImportStatus.COMPLETED -> {
-                            // Completed action buttons: Open in Contacts & Share
-                            val vcfFile = File(progress.filePath)
+                            // Completed action buttons: Open in Contacts & Share (with multi-file support)
+                            val files = progress.exportedFiles
+                            val fallbackFile = File(progress.filePath)
                             Column(modifier = Modifier.fillMaxWidth()) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
@@ -453,7 +457,7 @@ fun VcfExportScreen(
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = "VCF READY FOR CONTACTS IMPORT",
+                                        text = if (files.size > 1) "${files.size} SPLIT VCF FILES READY" else "VCF READY FOR CONTACTS IMPORT",
                                         color = HudGreen,
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Bold,
@@ -462,47 +466,152 @@ fun VcfExportScreen(
                                 }
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "File saved at: ${vcfFile.name} (${formatFileSize(progress.fileSizeBytes)})",
+                                    text = if (files.isNotEmpty()) {
+                                        "Exported ${String.format("%,d", progress.processedRecords)} records across ${files.size} files (${formatFileSize(progress.fileSizeBytes)})"
+                                    } else {
+                                        "File saved at: ${fallbackFile.name} (${formatFileSize(progress.fileSizeBytes)})"
+                                    },
                                     color = HudTextSecondary,
                                     fontSize = 10.sp,
                                     fontFamily = FontFamily.Monospace
                                 )
 
-                                Spacer(modifier = Modifier.height(12.dp))
-
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
+                                if (files.size > 1) {
+                                    Spacer(modifier = Modifier.height(10.dp))
                                     HudButton(
-                                        text = "IMPORT TO CONTACTS",
+                                        text = "SHARE ALL ${files.size} VCF PARTS",
                                         onClick = {
                                             try {
-                                                val intent = vcfExporter.createOpenInContactsIntent(vcfFile)
-                                                context.startActivity(intent)
+                                                val allFiles = files.map { it.file }
+                                                val shareIntent = vcfExporter.createShareAllVcfIntent(allFiles)
+                                                context.startActivity(Intent.createChooser(shareIntent, "Share All VCF Parts"))
                                             } catch (e: Exception) {
-                                                Toast.makeText(context, "Cannot open contacts handler: ${e.message}", Toast.LENGTH_LONG).show()
+                                                Toast.makeText(context, "Cannot share all parts: ${e.message}", Toast.LENGTH_SHORT).show()
                                             }
                                         },
-                                        modifier = Modifier.weight(1f),
+                                        modifier = Modifier.fillMaxWidth(),
                                         accentColor = HudGreen,
-                                        icon = Icons.Default.PersonAdd
-                                    )
-
-                                    HudButton(
-                                        text = "SHARE VCF",
-                                        onClick = {
-                                            try {
-                                                val shareIntent = vcfExporter.createShareVcfIntent(vcfFile)
-                                                context.startActivity(Intent.createChooser(shareIntent, "Share Contacts VCF"))
-                                            } catch (e: Exception) {
-                                                Toast.makeText(context, "Cannot share: ${e.message}", Toast.LENGTH_SHORT).show()
-                                            }
-                                        },
-                                        modifier = Modifier.weight(1f),
-                                        accentColor = HudCyan,
                                         icon = Icons.Default.Share
                                     )
+                                }
+
+                                Spacer(modifier = Modifier.height(12.dp))
+
+                                if (files.isNotEmpty()) {
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        files.forEach { part ->
+                                            Surface(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                color = HudSurfaceElevated,
+                                                shape = RoundedCornerShape(2.dp),
+                                                border = androidx.compose.foundation.BorderStroke(0.8.dp, HudBorderBright)
+                                            ) {
+                                                Column(modifier = Modifier.padding(10.dp)) {
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            HudBadge(
+                                                                text = "PART ${part.partNumber}/${files.size}",
+                                                                color = HudCyan
+                                                            )
+                                                            Spacer(modifier = Modifier.width(6.dp))
+                                                            Text(
+                                                                text = part.file.name,
+                                                                color = HudTextPrimary,
+                                                                fontSize = 11.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                fontFamily = FontFamily.Monospace
+                                                            )
+                                                        }
+                                                        Text(
+                                                            text = "${String.format("%,d", part.recordsCount)} records • ${formatFileSize(part.sizeBytes)}",
+                                                            color = HudTextDim,
+                                                            fontSize = 9.sp,
+                                                            fontFamily = FontFamily.Monospace
+                                                        )
+                                                    }
+
+                                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                    ) {
+                                                        HudButton(
+                                                            text = "IMPORT PART",
+                                                            onClick = {
+                                                                try {
+                                                                    val intent = vcfExporter.createOpenInContactsIntent(part.file)
+                                                                    context.startActivity(intent)
+                                                                } catch (e: Exception) {
+                                                                    Toast.makeText(context, "Cannot open contacts: ${e.message}", Toast.LENGTH_LONG).show()
+                                                                }
+                                                            },
+                                                            modifier = Modifier.weight(1f),
+                                                            accentColor = HudGreen,
+                                                            icon = Icons.Default.PersonAdd
+                                                        )
+
+                                                        HudButton(
+                                                            text = "SHARE PART",
+                                                            onClick = {
+                                                                try {
+                                                                    val shareIntent = vcfExporter.createShareVcfIntent(part.file)
+                                                                    context.startActivity(Intent.createChooser(shareIntent, "Share ${part.file.name}"))
+                                                                } catch (e: Exception) {
+                                                                    Toast.makeText(context, "Cannot share: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                                }
+                                                            },
+                                                            modifier = Modifier.weight(1f),
+                                                            accentColor = HudCyan,
+                                                            icon = Icons.Default.Share
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        HudButton(
+                                            text = "IMPORT TO CONTACTS",
+                                            onClick = {
+                                                try {
+                                                    val intent = vcfExporter.createOpenInContactsIntent(fallbackFile)
+                                                    context.startActivity(intent)
+                                                } catch (e: Exception) {
+                                                    Toast.makeText(context, "Cannot open contacts handler: ${e.message}", Toast.LENGTH_LONG).show()
+                                                }
+                                            },
+                                            modifier = Modifier.weight(1f),
+                                            accentColor = HudGreen,
+                                            icon = Icons.Default.PersonAdd
+                                        )
+
+                                        HudButton(
+                                            text = "SHARE VCF",
+                                            onClick = {
+                                                try {
+                                                    val shareIntent = vcfExporter.createShareVcfIntent(fallbackFile)
+                                                    context.startActivity(Intent.createChooser(shareIntent, "Share Contacts VCF"))
+                                                } catch (e: Exception) {
+                                                    Toast.makeText(context, "Cannot share: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                }
+                                            },
+                                            modifier = Modifier.weight(1f),
+                                            accentColor = HudCyan,
+                                            icon = Icons.Default.Share
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -648,17 +757,69 @@ fun VcfExportScreen(
                     }
                 }
 
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Split File Chunk Size Selector
+                Text(
+                    text = "RECORDS PER SPLIT VCF FILE:",
+                    color = HudTextDim,
+                    fontSize = 9.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf(1000, 2000, 5000).forEach { size ->
+                        val isSelected = recordsPerFile == size
+                        Surface(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable {
+                                    triggerHudHaptic(context, 15)
+                                    recordsPerFile = size
+                                },
+                            color = if (isSelected) HudCyan.copy(alpha = 0.2f) else HudSurfaceElevated,
+                            shape = RoundedCornerShape(2.dp),
+                            border = androidx.compose.foundation.BorderStroke(
+                                0.8.dp,
+                                if (isSelected) HudCyan else HudBorder
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(vertical = 6.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = "${String.format("%,d", size)} / FILE",
+                                    color = if (isSelected) HudCyan else HudTextSecondary,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                                Text(
+                                    text = if (size == 2000) "DEFAULT" else if (size == 1000) "COMPACT" else "LARGE",
+                                    color = HudTextDim,
+                                    fontSize = 8.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // Start Export Button
                 val canStart = prefixInput.length == 3 && matchingCount > 0 && progress.status != ImportStatus.RUNNING
 
                 HudButton(
-                    text = "COMPILE & EXPORT VCF FILE",
+                    text = "COMPILE & EXPORT SPLIT VCF FILES",
                     onClick = {
                         keyboardController?.hide()
                         scope.launch {
-                            vcfExporter.startExport(prefixInput)
+                            vcfExporter.startExport(prefixInput, recordsPerFile)
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),

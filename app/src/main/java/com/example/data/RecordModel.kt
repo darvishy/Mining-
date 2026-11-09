@@ -44,10 +44,20 @@ data class ImportProgress(
     val hasRecoverableSession: Boolean = false
 )
 
+data class VcfFileInfo(
+    val file: java.io.File,
+    val partNumber: Int,
+    val recordsCount: Long,
+    val sizeBytes: Long
+)
+
 data class VcfExportProgress(
     val status: ImportStatus = ImportStatus.IDLE,
     val prefix: String = "",
     val filePath: String = "",
+    val exportedFiles: List<VcfFileInfo> = emptyList(),
+    val currentPart: Int = 1,
+    val totalParts: Int = 1,
     val processedRecords: Long = 0L,
     val totalRecords: Long = 0L,
     val recordsPerSecond: Long = 0L,

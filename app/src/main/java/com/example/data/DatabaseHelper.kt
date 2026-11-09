@@ -360,6 +360,7 @@ class DatabaseHelper(private val context: Context) : SQLiteOpenHelper(context, D
         val trimmed = prefix.trim()
         if (trimmed.isEmpty()) return emptyList()
         val db = readableDatabase
+        val safeLimit = limit.coerceIn(1, 10000)
         val sql = """
             SELECT $COL_ID, $COL_NAT_CODE, $COL_CARD_NO, $COL_FULL_NAME, $COL_BIRTH_DATE, $COL_MOBILE
             FROM $TABLE_RECORDS
@@ -368,11 +369,11 @@ class DatabaseHelper(private val context: Context) : SQLiteOpenHelper(context, D
               AND $COL_FULL_NAME IS NOT NULL AND trim($COL_FULL_NAME) != ''
               AND $COL_MOBILE IS NOT NULL AND trim($COL_MOBILE) != ''
             ORDER BY $COL_ID ASC
-            LIMIT ?
+            LIMIT $safeLimit
         """.trimIndent()
 
         val list = mutableListOf<PersonRecord>()
-        db.rawQuery(sql, arrayOf(trimmed, afterId.toString(), limit.toString())).use { cursor ->
+        db.rawQuery(sql, arrayOf(trimmed, afterId.toString())).use { cursor ->
             val idIdx = cursor.getColumnIndexOrThrow(COL_ID)
             val natIdx = cursor.getColumnIndexOrThrow(COL_NAT_CODE)
             val cardIdx = cursor.getColumnIndexOrThrow(COL_CARD_NO)

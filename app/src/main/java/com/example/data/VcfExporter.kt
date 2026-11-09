@@ -22,7 +22,8 @@ class VcfExporter(
 ) {
     companion object {
         private const val TAG = "VcfExporter"
-        const val BATCH_SIZE = 5000
+        const val DEFAULT_RECORDS_PER_FILE = 2000
+        const val QUERY_BATCH_SIZE = 1000
     }
 
     private val _progress = MutableStateFlow(VcfExportProgress())
@@ -31,34 +32,6 @@ class VcfExporter(
     private val isPaused = AtomicBoolean(false)
     private val isCancelled = AtomicBoolean(false)
     @Volatile private var isRunning = false
-
-    init {
-        checkForRecoverableSession()
-    }
-
-    fun checkForRecoverableSession() {
-        try {
-            val session = dbHelper.getActiveVcfSession()
-            if (session != null && (session.status == ImportStatus.RUNNING.name || session.status == ImportStatus.PAUSED.name)) {
-                val file = File(session.filePath)
-                val fileSize = if (file.exists()) file.length() else 0L
-                _progress.value = VcfExportProgress(
-                    status = ImportStatus.PAUSED,
-                    prefix = session.prefix,
-                    filePath = session.filePath,
-                    processedRecords = session.processedRecords,
-                    totalRecords = session.totalRecords,
-                    elapsedSeconds = session.elapsedMs / 1000,
-                    fileSizeBytes = fileSize,
-                    hasRecoverableSession = true
-                )
-            } else {
-                _progress.value = _progress.value.copy(hasRecoverableSession = false)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error checking VCF session", e)
-        }
-    }
 
     fun pause() {
         if (isRunning) {
@@ -71,26 +44,7 @@ class VcfExporter(
         isPaused.set(false)
     }
 
-    suspend fun resumeExport(): Boolean = withContext(Dispatchers.IO) {
-        val session = dbHelper.getActiveVcfSession() ?: return@withContext false
-        val file = File(session.filePath)
-        if (!file.exists()) {
-            dbHelper.clearVcfSession()
-            _progress.value = VcfExportProgress(status = ImportStatus.IDLE)
-            return@withContext false
-        }
-        exportVcf(
-            prefix = session.prefix,
-            resumeFromId = session.lastProcessedId,
-            priorProcessed = session.processedRecords,
-            priorElapsedMs = session.elapsedMs,
-            targetTotal = session.totalRecords,
-            existingFile = file
-        )
-        return@withContext true
-    }
-
-    suspend fun startExport(prefix: String) = withContext(Dispatchers.IO) {
+    suspend fun startExport(prefix: String, recordsPerFile: Int = DEFAULT_RECORDS_PER_FILE) = withContext(Dispatchers.IO) {
         val cleanPrefix = prefix.trim()
         if (cleanPrefix.isEmpty()) return@withContext
 
@@ -104,169 +58,153 @@ class VcfExporter(
             return@withContext
         }
 
-        val exportDir = File(context.getExternalFilesDir(null), "vcf").apply { mkdirs() }
-        val vcfFile = File(exportDir, "contacts_prefix_${cleanPrefix}.vcf")
-        // If starting fresh, delete existing file
-        if (vcfFile.exists()) {
-            vcfFile.delete()
-        }
+        val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
+        val exportDir = File(baseDir, "vcf").apply { mkdirs() }
 
-        exportVcf(
+        // Clean any previous export files for this prefix
+        exportDir.listFiles { file ->
+            file.name.startsWith("contacts_${cleanPrefix}_part") && file.name.endsWith(".vcf")
+        }?.forEach { it.delete() }
+
+        exportVcfSplit(
             prefix = cleanPrefix,
-            resumeFromId = 0L,
-            priorProcessed = 0L,
-            priorElapsedMs = 0L,
             targetTotal = totalEligible,
-            existingFile = vcfFile
+            recordsPerFile = recordsPerFile.coerceIn(500, 10000),
+            exportDir = exportDir
         )
     }
 
-    private suspend fun exportVcf(
+    private suspend fun exportVcfSplit(
         prefix: String,
-        resumeFromId: Long,
-        priorProcessed: Long,
-        priorElapsedMs: Long,
         targetTotal: Long,
-        existingFile: File
+        recordsPerFile: Int,
+        exportDir: File
     ) = withContext(Dispatchers.IO) {
         if (isRunning) return@withContext
         isRunning = true
         isPaused.set(false)
         isCancelled.set(false)
 
-        val startTimestamp = System.currentTimeMillis() - priorElapsedMs
+        val totalParts = ((targetTotal + recordsPerFile - 1) / recordsPerFile).toInt().coerceAtLeast(1)
+        val startTimestamp = System.currentTimeMillis()
         var lastMetricTime = System.currentTimeMillis()
-        var lastMetricRecords = priorProcessed
-        var processed = priorProcessed
-        var lastId = resumeFromId
+        var lastMetricRecords = 0L
+        var processed = 0L
+        var lastId = 0L
+
+        val exportedFiles = mutableListOf<VcfFileInfo>()
 
         _progress.value = VcfExportProgress(
             status = ImportStatus.RUNNING,
             prefix = prefix,
-            filePath = existingFile.absolutePath,
-            processedRecords = processed,
+            processedRecords = 0L,
             totalRecords = targetTotal,
-            elapsedSeconds = priorElapsedMs / 1000,
-            fileSizeBytes = existingFile.length(),
-            hasRecoverableSession = false
-        )
-
-        dbHelper.saveVcfSession(
-            prefix = prefix,
-            filePath = existingFile.absolutePath,
-            lastProcessedId = lastId,
-            processedRecords = processed,
-            totalRecords = targetTotal,
-            status = ImportStatus.RUNNING.name,
-            elapsedMs = priorElapsedMs
+            currentPart = 1,
+            totalParts = totalParts,
+            exportedFiles = emptyList()
         )
 
         try {
-            // Append mode = true allows resuming without destroying previously written cards
-            FileOutputStream(existingFile, true).use { fos ->
-                BufferedWriter(OutputStreamWriter(fos, Charsets.UTF_8), 65536).use { writer ->
-                    var hasMore = true
+            var currentPartNumber = 1
 
-                    while (hasMore) {
-                        if (isCancelled.get()) {
-                            dbHelper.clearVcfSession()
-                            _progress.value = VcfExportProgress(status = ImportStatus.IDLE)
-                            return@withContext
-                        }
+            while (processed < targetTotal && !isCancelled.get()) {
+                val partFile = File(exportDir, "contacts_${prefix}_part${currentPartNumber}.vcf")
+                if (partFile.exists()) {
+                    partFile.delete()
+                }
 
-                        if (isPaused.get()) {
+                var partRecordCount = 0L
+
+                FileOutputStream(partFile, false).use { fos ->
+                    BufferedWriter(OutputStreamWriter(fos, Charsets.UTF_8), 32768).use { writer ->
+                        while (partRecordCount < recordsPerFile && processed < targetTotal) {
+                            if (isCancelled.get()) {
+                                _progress.value = VcfExportProgress(status = ImportStatus.IDLE)
+                                return@withContext
+                            }
+
+                            val needed = (recordsPerFile - partRecordCount).coerceAtMost(QUERY_BATCH_SIZE.toLong()).toInt()
+                            val batch = dbHelper.queryVcfRecordsBatch(prefix, lastId, needed)
+                            if (batch.isEmpty()) {
+                                break
+                            }
+
+                            for (record in batch) {
+                                writeVCardRecord(writer, record)
+                                processed++
+                                partRecordCount++
+                                lastId = record.id
+                            }
+
                             writer.flush()
-                            val currentElapsed = System.currentTimeMillis() - startTimestamp
-                            dbHelper.saveVcfSession(
+
+                            val now = System.currentTimeMillis()
+                            val timeDelta = (now - lastMetricTime).coerceAtLeast(1)
+                            val recordsDelta = processed - lastMetricRecords
+                            val currentSpeed = (recordsDelta * 1000L) / timeDelta
+                            val currentElapsed = (now - startTimestamp) / 1000
+                            val remaining = (targetTotal - processed).coerceAtLeast(0)
+                            val eta = if (currentSpeed > 0 && remaining > 0) remaining / currentSpeed else 0
+
+                            _progress.value = VcfExportProgress(
+                                status = ImportStatus.RUNNING,
                                 prefix = prefix,
-                                filePath = existingFile.absolutePath,
-                                lastProcessedId = lastId,
+                                filePath = partFile.absolutePath,
                                 processedRecords = processed,
                                 totalRecords = targetTotal,
-                                status = ImportStatus.PAUSED.name,
-                                elapsedMs = currentElapsed
+                                recordsPerSecond = currentSpeed,
+                                elapsedSeconds = currentElapsed,
+                                etaSeconds = eta,
+                                fileSizeBytes = exportedFiles.sumOf { it.sizeBytes } + partFile.length(),
+                                currentPart = currentPartNumber,
+                                totalParts = totalParts,
+                                exportedFiles = exportedFiles.toList()
                             )
-                            _progress.value = _progress.value.copy(
-                                status = ImportStatus.PAUSED,
-                                processedRecords = processed,
-                                elapsedSeconds = currentElapsed / 1000,
-                                fileSizeBytes = existingFile.length(),
-                                hasRecoverableSession = true
-                            )
-                            return@withContext
+
+                            lastMetricTime = now
+                            lastMetricRecords = processed
+
+                            if (batch.size < needed) {
+                                break
+                            }
                         }
 
-                        val batch = dbHelper.queryVcfRecordsBatch(prefix, lastId, BATCH_SIZE)
-                        if (batch.isEmpty()) {
-                            hasMore = false
-                            break
-                        }
-
-                        for (record in batch) {
-                            writeVCardRecord(writer, record)
-                            processed++
-                            lastId = record.id
-                        }
-
+                        // Explicitly flush and sync file descriptor before closing
                         writer.flush()
-
-                        val now = System.currentTimeMillis()
-                        val timeDelta = (now - lastMetricTime).coerceAtLeast(1)
-                        val recordsDelta = processed - lastMetricRecords
-                        val currentSpeed = (recordsDelta * 1000L) / timeDelta
-                        val currentElapsed = (now - startTimestamp) / 1000
-                        val remaining = (targetTotal - processed).coerceAtLeast(0)
-                        val eta = if (currentSpeed > 0 && remaining > 0) remaining / currentSpeed else 0
-
-                        _progress.value = VcfExportProgress(
-                            status = ImportStatus.RUNNING,
-                            prefix = prefix,
-                            filePath = existingFile.absolutePath,
-                            processedRecords = processed,
-                            totalRecords = targetTotal,
-                            recordsPerSecond = currentSpeed,
-                            elapsedSeconds = currentElapsed,
-                            etaSeconds = eta,
-                            fileSizeBytes = existingFile.length(),
-                            hasRecoverableSession = false
-                        )
-
-                        dbHelper.saveVcfSession(
-                            prefix = prefix,
-                            filePath = existingFile.absolutePath,
-                            lastProcessedId = lastId,
-                            processedRecords = processed,
-                            totalRecords = targetTotal,
-                            status = ImportStatus.RUNNING.name,
-                            elapsedMs = now - startTimestamp
-                        )
-
-                        lastMetricTime = now
-                        lastMetricRecords = processed
-
-                        if (batch.size < BATCH_SIZE) {
-                            hasMore = false
-                        }
                     }
-
-                    writer.flush()
+                    fos.fd.sync()
                 }
+
+                if (partFile.exists() && partFile.length() > 0) {
+                    exportedFiles.add(
+                        VcfFileInfo(
+                            file = partFile,
+                            partNumber = currentPartNumber,
+                            recordsCount = partRecordCount,
+                            sizeBytes = partFile.length()
+                        )
+                    )
+                }
+
+                currentPartNumber++
             }
 
-            dbHelper.clearVcfSession()
             val totalTimeSec = (System.currentTimeMillis() - startTimestamp) / 1000
+            val totalBytes = exportedFiles.sumOf { it.sizeBytes }
 
             _progress.value = VcfExportProgress(
                 status = ImportStatus.COMPLETED,
                 prefix = prefix,
-                filePath = existingFile.absolutePath,
+                filePath = exportedFiles.firstOrNull()?.file?.absolutePath ?: "",
                 processedRecords = processed,
                 totalRecords = processed,
                 elapsedSeconds = totalTimeSec,
                 recordsPerSecond = if (totalTimeSec > 0) processed / totalTimeSec else processed,
                 etaSeconds = 0,
-                fileSizeBytes = existingFile.length(),
-                hasRecoverableSession = false
+                fileSizeBytes = totalBytes,
+                currentPart = exportedFiles.size,
+                totalParts = exportedFiles.size,
+                exportedFiles = exportedFiles.toList()
             )
 
         } catch (e: Exception) {
@@ -274,11 +212,11 @@ class VcfExporter(
             _progress.value = VcfExportProgress(
                 status = ImportStatus.ERROR,
                 prefix = prefix,
-                filePath = existingFile.absolutePath,
                 processedRecords = processed,
                 totalRecords = targetTotal,
-                errorMessage = e.localizedMessage ?: "I/O failure while writing VCF file",
-                hasRecoverableSession = true
+                errorMessage = e.localizedMessage ?: "I/O failure while writing split VCF files",
+                exportedFiles = exportedFiles.toList(),
+                fileSizeBytes = exportedFiles.sumOf { it.sizeBytes }
             )
         } finally {
             isRunning = false
@@ -342,6 +280,19 @@ class VcfExporter(
             type = "text/x-vcard"
             putExtra(Intent.EXTRA_STREAM, uri)
             putExtra(Intent.EXTRA_SUBJECT, "Exported Contacts (${file.name})")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+    }
+
+    fun createShareAllVcfIntent(files: List<File>): Intent {
+        val uris = ArrayList<Uri>()
+        for (file in files) {
+            uris.add(getFileUri(file))
+        }
+        return Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+            type = "text/x-vcard"
+            putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+            putExtra(Intent.EXTRA_SUBJECT, "Exported Contacts (${files.size} parts)")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
     }
