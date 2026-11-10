@@ -48,6 +48,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -213,6 +214,7 @@ fun HudButton(
     Surface(
         modifier = modifier
             .height(48.dp)
+            .focusProperties { canFocus = false }
             .clickable(
                 enabled = enabled,
                 interactionSource = remember { MutableInteractionSource() },
@@ -283,8 +285,7 @@ fun HudTextField(
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
                     letterSpacing = 0.8.sp,
-                    textAlign = textAlign,
-                    modifier = if (textAlign == TextAlign.End) Modifier.fillMaxWidth() else Modifier
+                    textAlign = textAlign
                 )
             },
             placeholder = {
@@ -293,23 +294,32 @@ fun HudTextField(
                     color = HudTextDim,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 13.sp,
-                    textAlign = textAlign,
-                    modifier = if (textAlign == TextAlign.End) Modifier.fillMaxWidth() else Modifier
+                    textAlign = textAlign
                 )
             },
             leadingIcon = leadingIcon,
-            trailingIcon = trailingIcon ?: if (value.isNotEmpty()) {
-                {
-                    IconButton(onClick = { onValueChange("") }) {
-                        Icon(
-                            imageVector = Icons.Default.Clear,
-                            contentDescription = "Clear",
-                            tint = HudTextSecondary,
-                            modifier = Modifier.size(18.dp)
-                        )
+            trailingIcon = trailingIcon ?: {
+                Box(
+                    modifier = Modifier.size(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (value.isNotEmpty()) {
+                        IconButton(
+                            onClick = { onValueChange("") },
+                            modifier = Modifier
+                                .size(24.dp)
+                                .focusProperties { canFocus = false }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Clear,
+                                contentDescription = "Clear",
+                                tint = HudTextSecondary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                 }
-            } else null,
+            },
             isError = isError,
             singleLine = singleLine,
             visualTransformation = visualTransformation,

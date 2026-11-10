@@ -53,6 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -124,7 +125,7 @@ fun MainHudScreen(
     var isSearchFocused by remember { mutableStateOf(false) }
     var selectedRecordForDetail by remember { mutableStateOf<PersonRecord?>(null) }
 
-    val isSearchAtTop = isSearchFocused || searchResult != null || isSearching
+    val isSearchAtTop = searchResult != null || isSearching
 
     // Refresh database count
     val refreshCount = {
@@ -414,9 +415,7 @@ fun MainHudScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .onFocusChanged { focusState ->
-                                if (focusState.isFocused) {
-                                    isSearchFocused = true
-                                }
+                                isSearchFocused = focusState.isFocused
                             },
                         leadingIcon = {
                             Icon(
@@ -426,27 +425,34 @@ fun MainHudScreen(
                                 modifier = Modifier.size(18.dp)
                             )
                         },
-                        trailingIcon = if (searchQuery.isNotEmpty()) {
-                            {
-                                IconButton(
-                                    onClick = {
-                                        searchQuery = ""
-                                        searchResult = null
-                                        isSearchFocused = false
-                                        keyboardController?.hide()
-                                        focusManager.clearFocus()
-                                    },
-                                    modifier = Modifier.size(24.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = "Clear Search",
-                                        tint = HudTextSecondary,
-                                        modifier = Modifier.size(16.dp)
-                                    )
+                        trailingIcon = {
+                            Box(
+                                modifier = Modifier.size(24.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (searchQuery.isNotEmpty()) {
+                                    IconButton(
+                                        onClick = {
+                                            searchQuery = ""
+                                            searchResult = null
+                                            isSearchFocused = false
+                                            keyboardController?.hide()
+                                            focusManager.clearFocus()
+                                        },
+                                        modifier = Modifier
+                                            .size(24.dp)
+                                            .focusProperties { canFocus = false }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Clear Search",
+                                            tint = HudTextSecondary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
                                 }
                             }
-                        } else null,
+                        },
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                         keyboardActions = KeyboardActions(onSearch = {
                             keyboardController?.hide()
@@ -468,7 +474,9 @@ fun MainHudScreen(
                         enabled = searchQuery.trim().isNotEmpty() && !isSearching,
                         accentColor = HudCyan,
                         icon = Icons.Default.Search,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusProperties { canFocus = false }
                     )
                 }
             }
