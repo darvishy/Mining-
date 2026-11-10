@@ -1,5 +1,7 @@
 package com.example.data
 
+import android.net.Uri
+
 data class PersonRecord(
     val id: Long = 0,
     val nationalCode: String,
@@ -76,5 +78,69 @@ data class VcfSessionData(
     val totalRecords: Long,
     val status: String,
     val elapsedMs: Long
+)
+
+enum class CsvDelimiter(val label: String, val char: Char) {
+    AUTO("AUTO-DETECT", ','),
+    COMMA("COMMA [,]", ','),
+    SEMICOLON("SEMICOLON [;]", ';'),
+    TAB("TAB [\\t]", '\t'),
+    PIPE("PIPE [|]", '|')
+}
+
+enum class ColumnMapping(val label: String, val description: String) {
+    AUTO_HEADER("AUTO (FROM HEADERS)", "Detect columns: Code, Card, Name, Birth, Mobile"),
+    STANDARD("STANDARD", "Code, Card, Name, Birth, Mobile"),
+    MOBILE_FIRST("MOBILE FIRST", "Mobile, Code, Name, Card, Birth"),
+    CARD_FIRST("CARD FIRST", "Card, Code, Name, Mobile, Birth"),
+    NAME_FIRST("NAME FIRST", "Name, Code, Mobile, Card, Birth")
+}
+
+enum class HeaderMode(val label: String) {
+    AUTO("AUTO-DETECT"),
+    ALWAYS_SKIP("SKIP 1ST LINE"),
+    NO_HEADER("NO HEADER (ALL DATA)")
+}
+
+data class CsvFormatConfig(
+    val delimiter: CsvDelimiter = CsvDelimiter.AUTO,
+    val columnMapping: ColumnMapping = ColumnMapping.AUTO_HEADER,
+    val headerMode: HeaderMode = HeaderMode.AUTO
+)
+
+enum class QueueItemStatus {
+    PENDING,
+    SCANNING,
+    IMPORTING,
+    COMPLETED,
+    PAUSED,
+    FAILED,
+    CANCELLED
+}
+
+data class CsvQueueItem(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val uri: Uri,
+    val fileName: String,
+    val fileSize: Long = 0L,
+    val format: CsvFormatConfig = CsvFormatConfig(),
+    val status: QueueItemStatus = QueueItemStatus.PENDING,
+    val totalRecords: Long = 0L,
+    val processedRecords: Long = 0L,
+    val recordsPerSecond: Long = 0L,
+    val errorMessage: String? = null,
+    val enqueuedTimeMs: Long = System.currentTimeMillis()
+)
+
+data class QueueOverallProgress(
+    val isRunning: Boolean = false,
+    val isPaused: Boolean = false,
+    val currentFileIndex: Int = 0,
+    val totalFiles: Int = 0,
+    val totalProcessedRecords: Long = 0L,
+    val totalEstimatedRecords: Long = 0L,
+    val currentFileName: String = "",
+    val overallSpeed: Long = 0L,
+    val etaSeconds: Long = 0L
 )
 
