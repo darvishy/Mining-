@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import java.io.BufferedReader
+import java.io.File
+import java.io.FileInputStream
 import java.io.InputStreamReader
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -84,14 +86,14 @@ class CsvBatchImporter(
     }
 
     /**
-     * Rapidly counts lines in a CSV file using high-throughput byte buffer.
+     * Rapidly counts lines in a cached CSV file using high-throughput byte buffer.
      * Counts all newlines in tens of milliseconds without line-by-line string allocations.
      */
-    suspend fun countTotalRecords(uri: Uri): Long = withContext(Dispatchers.IO) {
+    private suspend fun countTotalRecordsInFile(file: File): Long = withContext(Dispatchers.IO) {
         try {
             var count = 0L
             var hasHeader = false
-            context.contentResolver.openInputStream(uri)?.use { stream ->
+            file.inputStream().use { stream ->
                 val buffer = ByteArray(128 * 1024)
                 var read: Int
                 var firstChunk = true
@@ -120,6 +122,8 @@ class CsvBatchImporter(
 
     /**
      * Imports a real CSV file from Uri.
+     * Safely caches incoming content to local storage first to prevent ContentProvider permission expiration
+     * or fatal stream-already-closed crashes when selecting multiple files sequentially.
      */
     suspend fun importCsvFile(
         uri: Uri,
@@ -133,6 +137,7 @@ class CsvBatchImporter(
         isPaused.set(false)
         isCancelled.set(false)
 
+        val cacheFile = File(context.cacheDir, "incoming_import.csv")
         val db = dbHelper.writableDatabase
         dbHelper.optimizeForBulkInsert(db)
 
@@ -142,141 +147,89 @@ class CsvBatchImporter(
         var processed = resumeFrom
         var lineIndex = 0L
 
-        var actualTotal = totalEstimate
-        if (actualTotal <= 0L) {
+        try {
+            // If starting fresh or cache does not exist, copy input stream once to internal cache
+            if (resumeFrom == 0L || !cacheFile.exists()) {
+                if (cacheFile.exists()) {
+                    cacheFile.delete()
+                }
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    cacheFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                } ?: throw IllegalArgumentException("Cannot open stream for selected file.")
+            }
+
+            var actualTotal = totalEstimate
+            if (actualTotal <= 0L) {
+                _progress.value = ImportProgress(
+                    status = ImportStatus.RUNNING,
+                    sourceName = fileName,
+                    processedRecords = processed,
+                    totalRecords = 0L,
+                    elapsedSeconds = priorElapsedMs / 1000,
+                    hasRecoverableSession = false
+                )
+                actualTotal = countTotalRecordsInFile(cacheFile)
+            }
+
             _progress.value = ImportProgress(
                 status = ImportStatus.RUNNING,
                 sourceName = fileName,
                 processedRecords = processed,
-                totalRecords = 0L,
+                totalRecords = actualTotal,
                 elapsedSeconds = priorElapsedMs / 1000,
                 hasRecoverableSession = false
             )
-            actualTotal = countTotalRecords(uri)
-        }
 
-        _progress.value = ImportProgress(
-            status = ImportStatus.RUNNING,
-            sourceName = fileName,
-            processedRecords = processed,
-            totalRecords = actualTotal,
-            elapsedSeconds = priorElapsedMs / 1000,
-            hasRecoverableSession = false
-        )
+            dbHelper.saveSession(
+                sourceName = fileName,
+                sourceUri = uri.toString(),
+                sourceType = "FILE",
+                processedRecords = processed,
+                byteOffset = 0,
+                totalRecords = actualTotal,
+                status = ImportStatus.RUNNING.name,
+                elapsedMs = priorElapsedMs
+            )
 
-        dbHelper.saveSession(
-            sourceName = fileName,
-            sourceUri = uri.toString(),
-            sourceType = "FILE",
-            processedRecords = processed,
-            byteOffset = 0,
-            totalRecords = actualTotal,
-            status = ImportStatus.RUNNING.name,
-            elapsedMs = priorElapsedMs
-        )
-
-        try {
-            val inputStream = context.contentResolver.openInputStream(uri)
-                ?: throw IllegalArgumentException("Cannot open stream for URI: $uri")
-
-            BufferedReader(InputStreamReader(inputStream, Charsets.UTF_8), 65536).use { reader ->
+            BufferedReader(InputStreamReader(FileInputStream(cacheFile), Charsets.UTF_8), 65536).use { reader ->
                 val insertStmt = dbHelper.createInsertStatement(db)
 
-                var batchCount = 0
-                db.beginTransactionNonExclusive()
-
                 try {
-                    var line: String? = reader.readLine()
-                    // Check header line if starting from 0
-                    if (resumeFrom == 0L && line != null) {
-                        val upper = line.uppercase()
-                        if (upper.contains("NATIONAL") || upper.contains("CARD") || upper.contains("MOBILE")) {
-                            // Header skipped
+                    var batchCount = 0
+                    db.beginTransactionNonExclusive()
+
+                    try {
+                        var line: String? = reader.readLine()
+                        // Check header line if starting from 0
+                        if (resumeFrom == 0L && line != null) {
+                            val upper = line.uppercase()
+                            if (upper.contains("NATIONAL") || upper.contains("CARD") || upper.contains("MOBILE")) {
+                                // Header skipped
+                                line = reader.readLine()
+                            }
+                        }
+
+                        // Fast forward if resuming
+                        while (line != null && lineIndex < resumeFrom) {
+                            lineIndex++
                             line = reader.readLine()
                         }
-                    }
 
-                    // Fast forward if resuming
-                    while (line != null && lineIndex < resumeFrom) {
-                        lineIndex++
-                        line = reader.readLine()
-                    }
-
-                    while (line != null) {
-                        if (isCancelled.get()) {
-                            db.setTransactionSuccessful()
-                            db.endTransaction()
-                            dbHelper.clearSession()
-                            _progress.value = ImportProgress(status = ImportStatus.IDLE)
-                            return@withContext
-                        }
-
-                        if (isPaused.get()) {
-                            db.setTransactionSuccessful()
-                            db.endTransaction()
-                            val currentElapsed = System.currentTimeMillis() - startTimestamp
-                            dbHelper.saveSession(
-                                sourceName = fileName,
-                                sourceUri = uri.toString(),
-                                sourceType = "FILE",
-                                processedRecords = processed,
-                                byteOffset = 0,
-                                totalRecords = actualTotal,
-                                status = ImportStatus.PAUSED.name,
-                                elapsedMs = currentElapsed
-                            )
-                            _progress.value = _progress.value.copy(
-                                status = ImportStatus.PAUSED,
-                                processedRecords = processed,
-                                totalRecords = actualTotal,
-                                elapsedSeconds = currentElapsed / 1000,
-                                hasRecoverableSession = true
-                            )
-                            return@withContext
-                        }
-
-                        val tokens = parseCsvLine(line)
-                        if (tokens.isNotEmpty()) {
-                            val natCode = tokens.getOrNull(0)?.trim() ?: ""
-                            val cardNo = tokens.getOrNull(1)?.trim() ?: ""
-                            val fullName = tokens.getOrNull(2)?.trim() ?: ""
-                            val birthDate = tokens.getOrNull(3)?.trim() ?: ""
-                            val mobile = tokens.getOrNull(4)?.trim() ?: ""
-
-                            insertStmt.bindString(1, natCode)
-                            insertStmt.bindString(2, cardNo)
-                            insertStmt.bindString(3, fullName)
-                            insertStmt.bindString(4, birthDate)
-                            insertStmt.bindString(5, mobile)
-                            insertStmt.executeInsert()
-                            insertStmt.clearBindings()
-
-                            processed++
-                            batchCount++
-
-                            if (batchCount >= BATCH_SIZE) {
+                        while (line != null) {
+                            if (isCancelled.get()) {
                                 db.setTransactionSuccessful()
                                 db.endTransaction()
+                                dbHelper.clearSession()
+                                _progress.value = ImportProgress(status = ImportStatus.IDLE)
+                                return@withContext
+                            }
 
-                                val now = System.currentTimeMillis()
-                                val timeDelta = (now - lastMetricTime).coerceAtLeast(1)
-                                val recordsDelta = processed - lastMetricRecords
-                                val currentSpeed = (recordsDelta * 1000L) / timeDelta
-                                val currentElapsed = (now - startTimestamp) / 1000
-
-                                val remaining = (actualTotal - processed).coerceAtLeast(0)
-                                val eta = if (currentSpeed > 0 && remaining > 0) remaining / currentSpeed else 0
-
-                                _progress.value = ImportProgress(
-                                    status = ImportStatus.RUNNING,
-                                    sourceName = fileName,
-                                    processedRecords = processed,
-                                    totalRecords = actualTotal,
-                                    recordsPerSecond = currentSpeed,
-                                    elapsedSeconds = currentElapsed,
-                                    etaSeconds = eta
-                                )
-
+                            if (isPaused.get()) {
+                                db.setTransactionSuccessful()
+                                db.endTransaction()
+                                val currentElapsed = System.currentTimeMillis() - startTimestamp
                                 dbHelper.saveSession(
                                     sourceName = fileName,
                                     sourceUri = uri.toString(),
@@ -284,27 +237,94 @@ class CsvBatchImporter(
                                     processedRecords = processed,
                                     byteOffset = 0,
                                     totalRecords = actualTotal,
-                                    status = ImportStatus.RUNNING.name,
-                                    elapsedMs = now - startTimestamp
+                                    status = ImportStatus.PAUSED.name,
+                                    elapsedMs = currentElapsed
                                 )
-
-                                lastMetricTime = now
-                                lastMetricRecords = processed
-                                batchCount = 0
-                                db.beginTransactionNonExclusive()
+                                _progress.value = _progress.value.copy(
+                                    status = ImportStatus.PAUSED,
+                                    processedRecords = processed,
+                                    totalRecords = actualTotal,
+                                    elapsedSeconds = currentElapsed / 1000,
+                                    hasRecoverableSession = true
+                                )
+                                return@withContext
                             }
+
+                            val tokens = parseCsvLine(line)
+                            if (tokens.isNotEmpty()) {
+                                val natCode = tokens.getOrNull(0)?.trim() ?: ""
+                                val cardNo = tokens.getOrNull(1)?.trim() ?: ""
+                                val fullName = tokens.getOrNull(2)?.trim() ?: ""
+                                val birthDate = tokens.getOrNull(3)?.trim() ?: ""
+                                val mobile = tokens.getOrNull(4)?.trim() ?: ""
+
+                                insertStmt.bindString(1, natCode)
+                                insertStmt.bindString(2, cardNo)
+                                insertStmt.bindString(3, fullName)
+                                insertStmt.bindString(4, birthDate)
+                                insertStmt.bindString(5, mobile)
+                                insertStmt.executeInsert()
+                                insertStmt.clearBindings()
+
+                                processed++
+                                batchCount++
+
+                                if (batchCount >= BATCH_SIZE) {
+                                    db.setTransactionSuccessful()
+                                    db.endTransaction()
+
+                                    val now = System.currentTimeMillis()
+                                    val timeDelta = (now - lastMetricTime).coerceAtLeast(1)
+                                    val recordsDelta = processed - lastMetricRecords
+                                    val currentSpeed = (recordsDelta * 1000L) / timeDelta
+                                    val currentElapsed = (now - startTimestamp) / 1000
+
+                                    val remaining = (actualTotal - processed).coerceAtLeast(0)
+                                    val eta = if (currentSpeed > 0 && remaining > 0) remaining / currentSpeed else 0
+
+                                    _progress.value = ImportProgress(
+                                        status = ImportStatus.RUNNING,
+                                        sourceName = fileName,
+                                        processedRecords = processed,
+                                        totalRecords = actualTotal,
+                                        recordsPerSecond = currentSpeed,
+                                        elapsedSeconds = currentElapsed,
+                                        etaSeconds = eta
+                                    )
+
+                                    dbHelper.saveSession(
+                                        sourceName = fileName,
+                                        sourceUri = uri.toString(),
+                                        sourceType = "FILE",
+                                        processedRecords = processed,
+                                        byteOffset = 0,
+                                        totalRecords = actualTotal,
+                                        status = ImportStatus.RUNNING.name,
+                                        elapsedMs = now - startTimestamp
+                                    )
+
+                                    lastMetricTime = now
+                                    lastMetricRecords = processed
+                                    batchCount = 0
+                                    db.beginTransactionNonExclusive()
+                                }
+                            }
+
+                            line = reader.readLine()
                         }
 
-                        line = reader.readLine()
-                    }
-
-                    if (batchCount > 0) {
-                        db.setTransactionSuccessful()
+                        if (batchCount > 0) {
+                            db.setTransactionSuccessful()
+                        }
+                    } finally {
+                        if (db.inTransaction()) {
+                            db.endTransaction()
+                        }
                     }
                 } finally {
-                    if (db.inTransaction()) {
-                        db.endTransaction()
-                    }
+                    try {
+                        insertStmt.close()
+                    } catch (_: Exception) {}
                 }
             }
 
@@ -331,12 +351,15 @@ class CsvBatchImporter(
                 hasRecoverableSession = true
             )
         } finally {
+            try {
+                if (cacheFile.exists() && _progress.value.status == ImportStatus.COMPLETED) {
+                    cacheFile.delete()
+                }
+            } catch (_: Exception) {}
             dbHelper.restoreStandardConfig(db)
             isRunning = false
         }
     }
-
-
 
     private fun parseCsvLine(line: String): List<String> {
         val tokens = mutableListOf<String>()

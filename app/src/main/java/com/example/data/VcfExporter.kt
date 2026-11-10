@@ -33,6 +33,34 @@ class VcfExporter(
     private val isCancelled = AtomicBoolean(false)
     @Volatile private var isRunning = false
 
+    init {
+        checkForRecoverableSession()
+    }
+
+    fun checkForRecoverableSession() {
+        try {
+            val session = dbHelper.getActiveVcfSession()
+            if (session != null && (session.status == ImportStatus.RUNNING.name || session.status == ImportStatus.PAUSED.name)) {
+                val file = File(session.filePath)
+                val fileSize = if (file.exists()) file.length() else 0L
+                _progress.value = VcfExportProgress(
+                    status = ImportStatus.PAUSED,
+                    prefix = session.prefix,
+                    filePath = session.filePath,
+                    processedRecords = session.processedRecords,
+                    totalRecords = session.totalRecords,
+                    elapsedSeconds = session.elapsedMs / 1000,
+                    fileSizeBytes = fileSize,
+                    hasRecoverableSession = true
+                )
+            } else {
+                _progress.value = _progress.value.copy(hasRecoverableSession = false)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking VCF session", e)
+        }
+    }
+
     fun pause() {
         if (isRunning) {
             isPaused.set(true)
@@ -42,6 +70,12 @@ class VcfExporter(
     fun cancel() {
         isCancelled.set(true)
         isPaused.set(false)
+    }
+
+    suspend fun resumeExport(): Boolean = withContext(Dispatchers.IO) {
+        val session = dbHelper.getActiveVcfSession() ?: return@withContext false
+        startExport(session.prefix)
+        return@withContext true
     }
 
     suspend fun startExport(prefix: String, recordsPerFile: Int = DEFAULT_RECORDS_PER_FILE) = withContext(Dispatchers.IO) {
@@ -169,7 +203,7 @@ class VcfExporter(
                             }
                         }
 
-                        // Explicitly flush and sync file descriptor before closing
+                        // Explicitly flush and sync file descriptor before closing to ensure 100% non-zero size
                         writer.flush()
                     }
                     fos.fd.sync()

@@ -1,11 +1,19 @@
 package com.example.ui.screens
 
+import android.content.Context
+import android.content.Intent
 import android.net.Uri
+import android.provider.OpenableColumns
+import android.util.Log
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -95,14 +103,33 @@ fun ImportScreen(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         if (uri != null) {
-            val fileName = uri.lastPathSegment ?: "IMPORT_DATA.csv"
+            val fileName = getFileNameFromUri(context, uri)
             scope.launch {
-                importer.importCsvFile(
-                    uri = uri,
-                    fileName = fileName,
-                    totalEstimate = 0L // Triggers automatic pre-scan to calculate exact total records
-                )
-                totalDbCount = dbHelper.getTotalCount()
+                try {
+                    try {
+                        context.contentResolver.takePersistableUriPermission(
+                            uri,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        )
+                    } catch (_: Exception) {}
+
+                    importer.importCsvFile(
+                        uri = uri,
+                        fileName = fileName,
+                        totalEstimate = 0L // Triggers automatic pre-scan to calculate exact total records
+                    )
+                    withContext(Dispatchers.IO) {
+                        val count = dbHelper.getTotalCount()
+                        withContext(Dispatchers.Main) {
+                            totalDbCount = count
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("ImportScreen", "Import error", e)
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Error reading file: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
+                }
             }
         }
     }
@@ -464,8 +491,14 @@ fun ImportScreen(
                     HudButton(
                         text = "SELECT & IMPORT CSV FILE",
                         onClick = {
-                            filePicker.launch(arrayOf("*/*", "text/*", "text/csv", "application/csv"))
+                            try {
+                                filePicker.launch(arrayOf("*/*"))
+                            } catch (e: Exception) {
+                                Log.e("ImportScreen", "Failed to launch picker", e)
+                                Toast.makeText(context, "Cannot open file picker: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
                         },
+                        enabled = progress.status != ImportStatus.RUNNING,
                         modifier = Modifier.fillMaxWidth(),
                         accentColor = HudCyan,
                         icon = Icons.Default.FolderOpen
@@ -658,4 +691,20 @@ private fun formatSeconds(seconds: Long): String {
     } else {
         String.format("%02d:%02d", m, s)
     }
+}
+
+private fun getFileNameFromUri(context: Context, uri: Uri): String {
+    var name = "IMPORT_DATA.csv"
+    try {
+        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (nameIndex != -1 && cursor.moveToFirst()) {
+                val displayName = cursor.getString(nameIndex)
+                if (!displayName.isNullOrBlank()) {
+                    name = displayName
+                }
+            }
+        }
+    } catch (_: Exception) {}
+    return name
 }
