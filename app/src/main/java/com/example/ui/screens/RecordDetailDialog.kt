@@ -3,12 +3,12 @@ package com.example.ui.screens
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.provider.ContactsContract
 import android.widget.Toast
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -57,6 +58,42 @@ import com.example.ui.theme.HudSurfaceElevated
 import com.example.ui.theme.HudTextDim
 import com.example.ui.theme.HudTextPrimary
 import com.example.ui.theme.HudTextSecondary
+
+fun addRecordToContacts(context: Context, record: PersonRecord) {
+    try {
+        val intent = Intent(Intent.ACTION_INSERT).apply {
+            type = ContactsContract.RawContacts.CONTENT_TYPE
+            putExtra(
+                ContactsContract.Intents.Insert.NAME,
+                record.fullName.ifEmpty { "Record ${record.nationalCode.ifEmpty { record.id.toString() }}" }
+            )
+            if (record.mobile.isNotBlank()) {
+                putExtra(ContactsContract.Intents.Insert.PHONE, record.mobile)
+                putExtra(ContactsContract.Intents.Insert.PHONE_TYPE, ContactsContract.CommonDataKinds.Phone.TYPE_MOBILE)
+            }
+            val notes = buildString {
+                if (record.nationalCode.isNotBlank()) append("National Code: ${record.nationalCode}\n")
+                if (record.cardNo.isNotBlank()) append("Card No: ${record.cardNo}\n")
+                if (record.birthDate.isNotBlank()) append("Birth Date: ${record.birthDate}\n")
+                append("Saved from Null-HUD Database Terminal")
+            }
+            putExtra(ContactsContract.Intents.Insert.NOTES, notes)
+        }
+        context.startActivity(intent)
+        triggerHudHaptic(context, 25)
+    } catch (e: Exception) {
+        Toast.makeText(context, "Cannot open contacts app: ${e.message}", Toast.LENGTH_SHORT).show()
+    }
+}
+
+fun dialPhoneNumber(context: Context, phone: String) {
+    if (phone.isBlank()) return
+    try {
+        val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$phone"))
+        context.startActivity(intent)
+        triggerHudHaptic(context, 20)
+    } catch (_: Exception) {}
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -163,11 +200,25 @@ fun RecordDetailDialog(
                     onCopy = { copyToClipboard("Mobile", record.mobile) }
                 )
 
-                Spacer(modifier = Modifier.height(18.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
+                // Primary Action: Add to Contact
+                HudButton(
+                    text = "ADD TO CONTACT",
+                    onClick = {
+                        addRecordToContacts(context, record)
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    accentColor = HudGreen,
+                    icon = Icons.Default.PersonAdd
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Secondary Actions Row
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     HudButton(
                         text = "COPY ALL",
@@ -183,8 +234,20 @@ fun RecordDetailDialog(
                         },
                         modifier = Modifier.weight(1f),
                         accentColor = HudCyan,
-                        icon = Icons.Default.ContentCopy
+                        icon = Icons.Default.ContentCopy,
+                        isSecondary = true
                     )
+
+                    if (record.mobile.isNotBlank()) {
+                        HudButton(
+                            text = "CALL",
+                            onClick = { dialPhoneNumber(context, record.mobile) },
+                            modifier = Modifier.weight(1f),
+                            accentColor = HudCyan,
+                            icon = Icons.Default.Phone,
+                            isSecondary = true
+                        )
+                    }
 
                     HudButton(
                         text = "CLOSE",

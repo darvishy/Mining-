@@ -5,6 +5,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -33,6 +34,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Lock
+import android.widget.Toast
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -538,6 +541,62 @@ fun MainHudScreen(
         // Search Results List
         val records = searchResult?.records ?: emptyList()
         if (records.isNotEmpty()) {
+            item(key = "batch_contacts_header") {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "RESULTS [${records.size}] // TAP ROW TO REVIEW",
+                        color = HudTextSecondary,
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Surface(
+                        modifier = Modifier
+                            .clickable {
+                                triggerHudHaptic(context, 20)
+                                val file = vcfExporter.exportSearchResultsToVcf(records)
+                                if (file != null) {
+                                    val intent = vcfExporter.createOpenInContactsIntent(file)
+                                    context.startActivity(intent)
+                                } else {
+                                    Toast.makeText(context, "Cannot generate VCF", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                        color = HudGreen.copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(2.dp),
+                        border = BorderStroke(1.dp, HudGreen)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PersonAdd,
+                                contentDescription = "Add all to contacts",
+                                tint = HudGreen,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "ADD ALL TO CONTACTS",
+                                color = HudGreen,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+            }
+
             items(records, key = { it.id }) { record ->
                 RecordItemCard(
                     record = record,
@@ -644,6 +703,7 @@ private fun RecordItemCard(
     record: PersonRecord,
     onClick: () -> Unit
 ) {
+    val context = LocalContext.current
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -743,7 +803,7 @@ private fun RecordItemCard(
                     Spacer(modifier = Modifier.width(1.dp))
                 }
 
-                // Mobile Number (Right Aligned)
+                // Mobile Number & Add to Contact Button (Right Aligned)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.End
@@ -763,6 +823,40 @@ private fun RecordItemCard(
                         tint = HudCyan,
                         modifier = Modifier.size(13.dp)
                     )
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    // Direct Add Contact Action Button
+                    Surface(
+                        modifier = Modifier
+                            .clickable {
+                                triggerHudHaptic(context, 20)
+                                addRecordToContacts(context, record)
+                            },
+                        color = HudGreen.copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(2.dp),
+                        border = BorderStroke(0.8.dp, HudGreen)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PersonAdd,
+                                contentDescription = "Add Contact",
+                                tint = HudGreen,
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text(
+                                text = "CONTACT",
+                                color = HudGreen,
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                    }
                 }
             }
         }

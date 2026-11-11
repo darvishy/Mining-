@@ -299,6 +299,26 @@ class VcfExporter(
         )
     }
 
+    fun exportSearchResultsToVcf(records: List<PersonRecord>, fileName: String = "search_contacts.vcf"): File? {
+        try {
+            val dir = File(context.cacheDir, "search_vcf").apply { mkdirs() }
+            val file = File(dir, fileName)
+            if (file.exists()) file.delete()
+
+            BufferedWriter(OutputStreamWriter(FileOutputStream(file), Charsets.UTF_8), 32768).use { writer ->
+                for (record in records) {
+                    if (record.fullName.isNotBlank() || record.mobile.isNotBlank()) {
+                        writeVCardRecord(writer, record)
+                    }
+                }
+            }
+            return file
+        } catch (e: Exception) {
+            Log.e(TAG, "Error exporting search results to VCF", e)
+            return null
+        }
+    }
+
     fun createOpenInContactsIntent(file: File): Intent {
         val uri = getFileUri(file)
         return Intent(Intent.ACTION_VIEW).apply {
